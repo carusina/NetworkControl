@@ -4,6 +4,7 @@
 #include "../Common/Ipv4Endpoint.h"
 #include "../Common/Protocol.h"
 #include "../Common/TimerCompensator.h"
+#include "../Common/ByteOrder.h"
 
 #include <iostream>
 #include <string>
@@ -83,8 +84,8 @@ namespace Server {
 				}
 
 				Common::Packet packet{};
-				packet.SequenceId = session->GetNextSequenceId();
-				packet.Timestamp = Common::HighResolutionTimer::GetMicroseconds();
+				packet.SequenceId = Common::HostToNetwork64(session->GetNextSequenceId());
+				packet.Timestamp = Common::HostToNetwork64(Common::HighResolutionTimer::GetMicroseconds());
 
 				const int sent = udpSocket_.SendTo(&packet, sizeof(packet), endpoint);
 

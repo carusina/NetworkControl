@@ -123,6 +123,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Common\ByteOrder.h" />
     <ClInclude Include="MetricsCollector.h" />
     <ClInclude Include="UdpReceiver.h" />
     <ClInclude Include="..\Common\Config.h" />

@@ -1,6 +1,7 @@
 #include "UdpReceiver.h"
 
 #include "../Common/Protocol.h"
+#include "../Common/ByteOrder.h"
 
 namespace Client {
 
@@ -55,6 +56,9 @@ namespace Client {
 			const int received = udpSocket_.ReceiveFrom(&packet, sizeof(packet), sender);
 
 			if (received == sizeof(packet)) {
+				packet.SequenceId = Common::NetworkToHost64(packet.SequenceId);
+				packet.Timestamp = Common::NetworkToHost64(packet.Timestamp);
+
 				metricsCollector_.OnPacketReceived(packet.SequenceId);
 			}
 		}

@@ -5,15 +5,67 @@
 #include "../Common/SocketRuntime.h"
 #include "../Common/TcpSocket.h"
 
+#include <conio.h>
+#include <Windows.h>
+
+#include <chrono>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace {
 
 	constexpr uint16_t ServerTcpPort = 5000;
 	constexpr uint16_t ClientUdpPort = 6000;
+	constexpr auto StatsRefreshInterval = std::chrono::milliseconds(500);
+
+	// 콘솔이 ANSI 커서 이동/삭제 시퀀스를 해석하도록 설정 (실시간 stats 화면 갱신에 사용)
+	void EnableVirtualTerminalProcessing()
+	{
+		const HANDLE stdOutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+
+		DWORD mode = 0;
+		if (stdOutHandle != INVALID_HANDLE_VALUE && GetConsoleMode(stdOutHandle, &mode)) {
+			SetConsoleMode(stdOutHandle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		}
+	}
+
+	void PrintMetrics(const Client::MetricsSnapshot& metrics)
+	{
+		std::cout << std::fixed << std::setprecision(2);
+		std::cout << "Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount << ", Loss Rate: " << metrics.LossRate << "%" << ", Out of Order: " << metrics.OutOfOrderCount << std::endl;
+
+		std::cout << "Average Interval: " << metrics.AverageReceiveIntervalMilliseconds << "ms" << ", Max Interval: " << metrics.MaxReceiveIntervalMilliseconds << "ms" << ", Average Deviation: " << metrics.AverageIntervalDeviationMilliseconds << "ms" << std::endl;
+
+		std::cout << "Delayed Packets: " << metrics.DelayedPacketCount << " / " << metrics.IntervalSampleCount << ", Delayed Packet Rate: " << metrics.DelayedPacketRate << "%" << std::endl;
+	}
+
+	// stats 화면이 3줄을 출력하므로, 다음 프레임을 그리기 전에 그만큼 커서를 올려 지움
+	void RunLiveStats(Client::UdpReceiver& udpReceiver)
+	{
+		std::cout << "Live stats - press any key to stop." << std::endl;
+
+		bool isFirstFrame = true;
+
+		while (!_kbhit())
+		{
+			if (!isFirstFrame) {
+				std::cout << "\x1b[3A\x1b[0J";
+			}
+			isFirstFrame = false;
+
+			PrintMetrics(udpReceiver.GetMetrics());
+
+			std::this_thread::sleep_for(StatsRefreshInterval);
+		}
+
+		// 화면을 멈추는 데 사용한 키 입력이 다음 명령 프롬프트로 새어 들어가지 않도록 비움
+		while (_kbhit()) {
+			_getch();
+		}
+	}
 
 	bool CreateServerEndpoint(Common::Ipv4Endpoint& endpoint)
 	{
@@ -29,7 +81,7 @@ namespace {
 	{
 		Common::ControlMessage message{};
 		message.Type = command;
-		message.Payload = payload;
+		message.Payload = htonl(payload);
 
 		if (!tcpSocket.SendAll(&message, sizeof(message))) {
 			std::cerr << "TCP command send failed: " << Common::TcpSocket::GetLastError() << std::endl;
@@ -117,14 +169,7 @@ namespace {
 			}
 			else if (input == "stats")
 			{
-				const Client::MetricsSnapshot metrics = udpReceiver.GetMetrics();
-
-				std::cout << std::fixed << std::setprecision(2);
-				std::cout << "Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount << ", Loss Rate: " << metrics.LossRate << "%" << ", Out of Order: " << metrics.OutOfOrderCount << std::endl;
-				
-				std::cout << "Average Interval: " << metrics.AverageReceiveIntervalMilliseconds << "ms" << ", Max Interval: " << metrics.MaxReceiveIntervalMilliseconds << "ms" << ", Average Deviation: " << metrics.AverageIntervalDeviationMilliseconds << "ms" << std::endl;
-
-				std::cout << "Delayed Packets: " << metrics.DelayedPacketCount << " / " << metrics.IntervalSampleCount << ", Delayed Packet Rate: " << metrics.DelayedPacketRate << "%" << std::endl;
+				RunLiveStats(udpReceiver);
 			}
 			else {
 				std::cout << "Unknown command." << std::endl;
@@ -159,6 +204,8 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Winsock initialization failed." << std::endl;
 		return 1;
 	}
+
+	EnableVirtualTerminalProcessing();
 
 	if (!RunClientControlLoop(clientUdpPort)) {
 		std::cout << "Press Enter to exit.";

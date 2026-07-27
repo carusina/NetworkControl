@@ -110,6 +110,8 @@ namespace Server {
 
 		while (isRunning_ && controlSocket.ReceiveAll(&message, sizeof(message)))
 		{
+			message.Payload = ntohl(message.Payload);
+
 			if (message.Type == Common::CommandType::RegisterUdpPort)
 			{
 				isUdpEndpointRegistered = RegisterUdpEndpoint(*session, clientEndpoint, message.Payload);

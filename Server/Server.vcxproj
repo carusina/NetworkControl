@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Common\ByteOrder.h" />
     <ClInclude Include="ClientSession.h" />
     <ClInclude Include="SessionManager.h" />
     <ClInclude Include="TcpControlServer.h" />
