@@ -39,6 +39,7 @@
     <ClCompile Include="SessionManager.cpp" />
     <ClCompile Include="TcpControlServer.cpp" />
     <ClCompile Include="UdpStreamingService.cpp" />
+    <ClCompile Include="..\Common\Config.cpp" />
     <ClCompile Include="..\Common\Ipv4Endpoint.cpp" />
     <ClCompile Include="..\Common\SocketRuntime.cpp" />
     <ClCompile Include="..\Common\TcpSocket.cpp" />

@@ -1,5 +1,6 @@
 #include "UdpReceiver.h"
 
+#include "../Common/Config.h"
 #include "../Common/Ipv4Endpoint.h"
 #include "../Common/Protocol.h"
 #include "../Common/SocketRuntime.h"
@@ -17,8 +18,7 @@
 
 namespace {
 
-	constexpr uint16_t ServerTcpPort = 5000;
-	constexpr uint16_t ClientUdpPort = 6000;
+	constexpr const char* ConfigFilePath = "client.ini";
 	constexpr auto StatsRefreshInterval = std::chrono::milliseconds(500);
 
 	// 콘솔이 ANSI 커서 이동/삭제 시퀀스를 해석하도록 설정 (실시간 stats 화면 갱신에 사용)
@@ -67,9 +67,9 @@ namespace {
 		}
 	}
 
-	bool CreateServerEndpoint(Common::Ipv4Endpoint& endpoint)
+	bool CreateServerEndpoint(const std::string& host, uint16_t port, Common::Ipv4Endpoint& endpoint)
 	{
-		if (!Common::Ipv4Endpoint::TryCreate("127.0.0.1", ServerTcpPort, endpoint)) {
+		if (!Common::Ipv4Endpoint::TryCreate(host, port, endpoint)) {
 			std::cerr << "Server endpoint creation failed." << std::endl;
 			return false;
 		}
@@ -91,16 +91,16 @@ namespace {
 		return true;
 	}
 
-	bool RunClientControlLoop(uint16_t clientUdpPort)
+	bool RunClientControlLoop(const Common::ClientConfig& config)
 	{
 		Client::UdpReceiver udpReceiver;
 
-		if (!udpReceiver.Start(clientUdpPort)) {
+		if (!udpReceiver.Start(config.UdpPort)) {
 			return false;
 		}
 
 		Common::Ipv4Endpoint serverEndpoint;
-		if (!CreateServerEndpoint(serverEndpoint)) {
+		if (!CreateServerEndpoint(config.Host, config.TcpPort, serverEndpoint)) {
 			return false;
 		}
 
@@ -109,17 +109,17 @@ namespace {
 			std::cerr << "TCP socket creation failed: " << Common::TcpSocket::GetLastError() << std::endl;
 			return false;
 		}
-		
+
 		if (!tcpSocket.Connect(serverEndpoint)) {
 			std::cerr << "TCP connect failed: " << Common::TcpSocket::GetLastError() << std::endl;
 			return false;
 		}
 
-		if (!SendCommand(tcpSocket, Common::CommandType::RegisterUdpPort, clientUdpPort)) {
+		if (!SendCommand(tcpSocket, Common::CommandType::RegisterUdpPort, config.UdpPort)) {
 			return false;
 		}
 
-		std::cout << "UDP port " << clientUdpPort << " registered." << std::endl;
+		std::cout << "UDP port " << config.UdpPort << " registered." << std::endl;
 		std::cout << "Commands: play, pause, stop, reset, 30, 60, stats, quit" << std::endl;
 
 		std::string input;
@@ -180,7 +180,11 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) {
-	uint16_t clientUdpPort = 6000;
+	Common::ClientConfig config;
+
+	if (Common::LoadClientConfig(ConfigFilePath, config)) {
+		std::cout << "Loaded config from " << ConfigFilePath << "." << std::endl;
+	}
 
 	if (argc == 2)
 	{
@@ -191,7 +195,7 @@ int main(int argc, char* argv[]) {
 			return 1;
 		}
 
-		clientUdpPort = static_cast<uint16_t>(parsedPort);
+		config.UdpPort = static_cast<uint16_t>(parsedPort);
 	}
 	else if (argc > 2) {
 		std::cerr << "Usage: Client.exe [udpPort]" << std::endl;
@@ -207,7 +211,7 @@ int main(int argc, char* argv[]) {
 
 	EnableVirtualTerminalProcessing();
 
-	if (!RunClientControlLoop(clientUdpPort)) {
+	if (!RunClientControlLoop(config)) {
 		std::cout << "Press Enter to exit.";
 		std::cin.get();
 		return 1;

@@ -139,6 +139,7 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="MetricsCollector.cpp" />
     <ClCompile Include="UdpReceiver.cpp" />
+    <ClCompile Include="..\Common\Config.cpp" />
     <ClCompile Include="..\Common\Ipv4Endpoint.cpp" />
     <ClCompile Include="..\Common\SocketRuntime.cpp" />
     <ClCompile Include="..\Common\TcpSocket.cpp" />

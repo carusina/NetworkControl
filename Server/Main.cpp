@@ -2,6 +2,7 @@
 #include "TcpControlServer.h"
 #include "UdpStreamingService.h"
 
+#include "../Common/Config.h"
 #include "../Common/SocketRuntime.h"
 
 #include <iostream>
@@ -9,7 +10,7 @@
 
 namespace {
 
-	constexpr uint16_t TcpPort = 5000;
+	constexpr const char* ConfigFilePath = "server.ini";
 
 } // namespace
 
@@ -21,11 +22,16 @@ int main() {
 		return 1;
 	}
 
+	Common::ServerConfig config;
+	if (Common::LoadServerConfig(ConfigFilePath, config)) {
+		std::cout << "Loaded config from " << ConfigFilePath << "." << std::endl;
+	}
+
 	Server::SessionManager sessionManager;
 	Server::UdpStreamingService streamingService(sessionManager);
 	Server::TcpControlServer controlServer(sessionManager);
 
-	if (!streamingService.Start() || !controlServer.Start(TcpPort)) {
+	if (!streamingService.Start() || !controlServer.Start(config.TcpPort)) {
 		return 1;
 	}
 
