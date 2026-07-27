@@ -31,6 +31,8 @@ namespace Client {
 
 			RecordReceiveInterval(receivedTime, sequenceId);
 			highestSequenceId_ = sequenceId;
+
+			ExpireStaleMissingSequenceIds(highestSequenceId_);
 			return;
 		}
 
@@ -62,6 +64,7 @@ namespace Client {
 
 		totalReceivedCount_ = 0;
 		outOfOrderCount_ = 0;
+		confirmedLostCount_ = 0;
 		highestSequenceId_ = 0;
 		hasReceivedPacket_ = false;
 		missingSequenceIds_.clear();
@@ -87,7 +90,7 @@ namespace Client {
 		MetricsSnapshot snapshot;
 
 		snapshot.TotalReceivedCount = totalReceivedCount_;
-		snapshot.LossCount = static_cast<uint64_t>(missingSequenceIds_.size());
+		snapshot.LossCount = confirmedLostCount_ + static_cast<uint64_t>(missingSequenceIds_.size());
 		snapshot.OutOfOrderCount = outOfOrderCount_;
 
 		const uint64_t expectedPacketCount = snapshot.TotalReceivedCount + snapshot.LossCount;
@@ -163,6 +166,28 @@ namespace Client {
 
 	double MetricsCollector::GetExpectedIntervalMilliseconds() const {
 		return 1000.0 / static_cast<double>(static_cast<uint32_t>(expectedDataRate_));
+	}
+
+	void MetricsCollector::ExpireStaleMissingSequenceIds(uint64_t highestSequenceId)
+	{
+		if (highestSequenceId <= MissingSequenceWindow) {
+			return;
+		}
+
+		const uint64_t expiryThreshold = highestSequenceId - MissingSequenceWindow;
+
+		for (auto it = missingSequenceIds_.begin(); it != missingSequenceIds_.end(); )
+		{
+			if (*it <= expiryThreshold)
+			{
+				it = missingSequenceIds_.erase(it);
+				++confirmedLostCount_;
+			}
+			else
+			{
+				++it;
+			}
+		}
 	}
 
 } // namespace Client

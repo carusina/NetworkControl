@@ -43,9 +43,16 @@ namespace Client {
 		void RecordReceiveInterval(std::chrono::steady_clock::time_point receivedTime, uint64_t sequenceId);
 		double GetExpectedIntervalMilliseconds() const;
 
+		// highestSequenceId_ 기준으로 너무 오래된 미수신 시퀀스는 확정 유실로 전환
+		void ExpireStaleMissingSequenceIds(uint64_t highestSequenceId);
+
 	private:
+		// 이 범위보다 오래된 미수신 시퀀스는 다시 안 올 것으로 보고 확정 유실 처리
+		static constexpr uint64_t MissingSequenceWindow = 1000;
+
 		uint64_t totalReceivedCount_ = 0;
 		uint64_t outOfOrderCount_ = 0;
+		uint64_t confirmedLostCount_ = 0;
 		uint64_t highestSequenceId_ = 0;
 		bool hasReceivedPacket_ = false;
 

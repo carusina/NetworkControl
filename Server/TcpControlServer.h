@@ -5,9 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
-#include <mutex>
 #include <thread>
-#include <vector>
 
 namespace Server {
 
@@ -34,8 +32,9 @@ namespace Server {
 			Common::TcpSocket listenerSocket_;
 
 			std::thread acceptThread_;
-			std::vector<std::thread> controlThreads_;
-			std::mutex controlThreadsMutex_;
+
+			// 세션마다 detach된 ControlWorker 스레드 수 - Stop()이 전부 끝나기를 기다리는 데 사용
+			std::atomic<int> activeControlWorkerCount_{ 0 };
 
 			std::atomic<bool> isRunning_{ false };
 			std::atomic<uint64_t> nextSessionId_{ 1 };

@@ -1,9 +1,10 @@
 #include "TcpControlServer.h"
 #include "../Common/Protocol.h"
 
-
+#include <chrono>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <utility>
 
 namespace Server {
@@ -55,16 +56,10 @@ namespace Server {
 			acceptThread_.join();
 		}
 
-		std::lock_guard<std::mutex> lock(controlThreadsMutex_);
-
-		for (std::thread& controlThread : controlThreads_)
-		{
-			if (controlThread.joinable()) {
-				controlThread.join();
-			}
+		// acceptThread_가 끝났으므로 이 시점 이후로는 activeControlWorkerCount_가 늘어나지 않음
+		while (activeControlWorkerCount_.load() > 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-
-		controlThreads_.clear();
 	}
 
 	void TcpControlServer::AcceptWorker()
@@ -95,9 +90,8 @@ namespace Server {
 
 			std::cout << "Session " << session->GetSessionId() << " connection from " << clientEndpoint.GetIpAddress() << "." << std::endl;
 
-			std::lock_guard<std::mutex> lock(controlThreadsMutex_);
-
-			controlThreads_.emplace_back(&TcpControlServer::ControlWorker, this, session, clientEndpoint);
+			activeControlWorkerCount_.fetch_add(1);
+			std::thread(&TcpControlServer::ControlWorker, this, session, clientEndpoint).detach();
 		}
 	}
 
@@ -129,6 +123,7 @@ namespace Server {
 		std::cout << "Session " << session->GetSessionId() << " control connection closed." << std::endl;
 
 		sessionManager_.RemoveSession(session->GetSessionId());
+		activeControlWorkerCount_.fetch_sub(1);
 	}
 
 	bool TcpControlServer::RegisterUdpEndpoint(ClientSession& session, const Common::Ipv4Endpoint& clientEndpoint, uint32_t udpPort) const
