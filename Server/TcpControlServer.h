@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../Common/Protocol.h"
 #include "../Common/TcpSocket.h"
 #include "SessionManager.h"
 
@@ -9,7 +10,7 @@
 
 namespace Server {
 
-	// TCP 연결 수락과 세션별 제어 명령 처리를 담당
+	// TCP 연결 수락과 세션별 제어 명령 처리, 엔티티 Spawn/Despawn 브로드캐스트를 담당
 	class TcpControlServer {
 		public:
 			explicit TcpControlServer(SessionManager& sessionManager);
@@ -25,7 +26,19 @@ namespace Server {
 			void AcceptWorker();
 			void ControlWorker(std::shared_ptr<ClientSession> session, Common::Ipv4Endpoint clientEndpoint);
 
-			bool RegisterUdpEndpoint(ClientSession& session, const Common::Ipv4Endpoint& clientEndpoint, uint32_t udpPort) const;
+			// 메시지 하나를 읽어 처리. 연결을 계속 유지해야 하면 true, 끊어야 하면 false
+			bool ProcessOneMessage(ClientSession& session, const Common::Ipv4Endpoint& clientEndpoint, bool& isUdpEndpointRegistered);
+
+			bool RegisterUdpEndpoint(ClientSession& session, const Common::Ipv4Endpoint& clientEndpoint, uint16_t udpPort) const;
+
+			void SendEntitySpawn(ClientSession& recipient, const Common::EntitySpawnPayload& payload) const;
+			void SendEntityDespawn(ClientSession& recipient, const Common::EntityDespawnPayload& payload) const;
+
+			// 새로 등록된 세션에게: 자기 자신 Spawn(가장 먼저) + 기존 세션들 Spawn / 다른 세션들에게: 새 세션 Spawn
+			void BroadcastSpawnsForNewSession(ClientSession& newSession);
+
+			// excludeSessionId를 제외한 모든 세션에 EntityDespawn 전송
+			void BroadcastEntityDespawn(uint32_t entityId, uint64_t excludeSessionId);
 
 		private:
 			SessionManager& sessionManager_;

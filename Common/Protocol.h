@@ -4,31 +4,27 @@
 
 namespace Common {
 
-    // 네트워크 전송 레이아웃 고정
-    #pragma pack(push, 1)
+    class BinaryWriter;
+    class BinaryReader;
 
-    // UDP 데이터 채널에서 전송하는 패킷
-    struct Packet {
-        uint64_t SequenceId; // 세션별 패킷 순번
-        uint64_t Timestamp; // 서버 기준 생성 시각
+    // 모든 메시지 맨 앞에 붙는 1바이트 타입 태그로 Payload 모양을 결정
+    enum class MessageType : uint8_t {
+        RegisterUdpPort,      // UDP 수신 포트 등록 (TCP)
+        Play,                 // 스트리밍 시작 또는 재개 (TCP)
+        Pause,                // 스트리밍 일시 정지 (TCP)
+        Stop,                 // 스트리밍 중지 (TCP)
+        Reset,                // 세션/엔티티 상태 초기화 (TCP)
+        SetRate,              // 수신 주기 변경 (TCP)
+        EntityControlInput,   // 조종 입력: Throttle/Yaw (UDP, client -> server)
+        EntityState,          // 엔티티 상태 브로드캐스트 (UDP, server -> client)
+        EntitySpawn,          // 엔티티 생성 알림 (TCP, server -> client)
+        EntityDespawn         // 엔티티 제거 알림 (TCP, server -> client)
     };
 
-    // TCP 제어 채널에서 사용하는 명령
-    enum class CommandType : uint8_t {
-        RegisterUdpPort, // UDP 수신 포트 등록
-        Play,            // 스트리밍 시작 또는 재개
-        Pause,           // 스트리밍 일시 정지
-        Stop,            // 스트리밍 중지
-        Reset,           // 세션 상태 초기화
-        SetRate          // 송신 주기 변경
+    // 엔티티 종류 - 지금은 플레이어 헬기 하나뿐이라도 확장 대비로 태그를 둠
+    enum class EntityType : uint8_t {
+        PlayerHelicopter
     };
-
-    // TCP  제어 메시지의 고정 형식
-    struct ControlMessage {
-        CommandType Type;
-        uint32_t Payload; // UDP 포트 번호 또는 DataRate 값
-    };
-    #pragma pack(pop)
 
     // UDP 데이터 전송 빈도
     enum class DataRate : uint32_t {
@@ -42,5 +38,74 @@ namespace Common {
         Playing,
         Paused
     };
+
+    struct RegisterUdpPortPayload {
+        uint16_t Port = 0;
+    };
+
+    struct SetRatePayload {
+        uint32_t DataRateHz = 0;
+    };
+
+    // Throttle/Yaw 둘 다 -1.0 ~ 1.0 범위
+    struct EntityControlInputPayload {
+        float Throttle = 0.0f;
+        float Yaw = 0.0f;
+    };
+
+    struct EntityStatePayload {
+        uint64_t SequenceId = 0;   // 수신자별 UDP 패킷 순번 (유실/역전 통계용)
+        uint64_t Timestamp = 0;    // 서버 기준 생성 시각 (지연 측정용)
+        uint32_t EntityId = 0;
+        float PositionX = 0.0f;
+        float PositionY = 0.0f;
+        float Heading = 0.0f;
+        float VelocityX = 0.0f;
+        float VelocityY = 0.0f;
+    };
+
+    struct EntitySpawnPayload {
+        uint32_t EntityId = 0;
+        EntityType Type = EntityType::PlayerHelicopter;
+        float PositionX = 0.0f;
+        float PositionY = 0.0f;
+        float Heading = 0.0f;
+    };
+
+    struct EntityDespawnPayload {
+        uint32_t EntityId = 0;
+    };
+
+    // Play/Pause/Stop/Reset은 헤더(MessageType)만 있고 별도 Payload가 없음
+
+    // 각 Payload의 직렬화된 바이트 수 - TCP/UDP 수신 측에서 헤더 다음 몇 바이트를 읽어야 하는지 알려줌
+    // (struct의 sizeof는 컴파일러 패딩이 낄 수 있어 실제 전송 크기와 다를 수 있으므로 쓰지 않음)
+    constexpr size_t RegisterUdpPortPayloadSize = sizeof(uint16_t);
+    constexpr size_t SetRatePayloadSize = sizeof(uint32_t);
+    constexpr size_t EntityControlInputPayloadSize = sizeof(float) * 2;
+    constexpr size_t EntityStatePayloadSize = sizeof(uint64_t) * 2 + sizeof(uint32_t) + sizeof(float) * 5;
+    constexpr size_t EntitySpawnPayloadSize = sizeof(uint32_t) + sizeof(uint8_t) + sizeof(float) * 3;
+    constexpr size_t EntityDespawnPayloadSize = sizeof(uint32_t);
+
+    void SerializeHeader(BinaryWriter& writer, MessageType type);
+    bool TryDeserializeHeader(BinaryReader& reader, MessageType& type);
+
+    void SerializeRegisterUdpPort(BinaryWriter& writer, const RegisterUdpPortPayload& payload);
+    bool TryDeserializeRegisterUdpPort(BinaryReader& reader, RegisterUdpPortPayload& payload);
+
+    void SerializeSetRate(BinaryWriter& writer, const SetRatePayload& payload);
+    bool TryDeserializeSetRate(BinaryReader& reader, SetRatePayload& payload);
+
+    void SerializeEntityControlInput(BinaryWriter& writer, const EntityControlInputPayload& payload);
+    bool TryDeserializeEntityControlInput(BinaryReader& reader, EntityControlInputPayload& payload);
+
+    void SerializeEntityState(BinaryWriter& writer, const EntityStatePayload& payload);
+    bool TryDeserializeEntityState(BinaryReader& reader, EntityStatePayload& payload);
+
+    void SerializeEntitySpawn(BinaryWriter& writer, const EntitySpawnPayload& payload);
+    bool TryDeserializeEntitySpawn(BinaryReader& reader, EntitySpawnPayload& payload);
+
+    void SerializeEntityDespawn(BinaryWriter& writer, const EntityDespawnPayload& payload);
+    bool TryDeserializeEntityDespawn(BinaryReader& reader, EntityDespawnPayload& payload);
 
 } // namespace Common

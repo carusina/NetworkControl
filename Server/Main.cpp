@@ -1,5 +1,6 @@
 #include "SessionManager.h"
 #include "TcpControlServer.h"
+#include "UdpControlInputReceiver.h"
 #include "UdpStreamingService.h"
 
 #include "../Common/Config.h"
@@ -29,9 +30,13 @@ int main() {
 
 	Server::SessionManager sessionManager;
 	Server::UdpStreamingService streamingService(sessionManager);
+	Server::UdpControlInputReceiver controlInputReceiver(sessionManager);
 	Server::TcpControlServer controlServer(sessionManager);
 
-	if (!streamingService.Start() || !controlServer.Start(config.TcpPort)) {
+	if (!streamingService.Start() ||
+		!controlInputReceiver.Start(config.UdpPort) ||
+		!controlServer.Start(config.TcpPort))
+	{
 		return 1;
 	}
 
@@ -46,6 +51,7 @@ int main() {
 	}
 
 	controlServer.Stop();
+	controlInputReceiver.Stop();
 	streamingService.Stop();
 
 	return 0;

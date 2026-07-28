@@ -23,12 +23,19 @@ namespace Client {
 
 		uint64_t DelayedPacketCount = 0;
 		double DelayedPacketRate = 0.0;
+
+		// 서버 Timestamp 기준 편도 지연 - 서버/클라이언트가 같은 컴퓨터에서 실행 중일 때만 유효
+		uint64_t LatencySampleCount = 0;
+		double AverageLatencyMilliseconds = 0.0;
+		double MinLatencyMilliseconds = 0.0;
+		double MaxLatencyMilliseconds = 0.0;
 	};
 
 	// UDP 시퀀스와 수신 간격을 분석
 	class MetricsCollector {
 	public:
-		void OnPacketReceived(uint64_t sequenceId);
+		// sendTimestampMicroseconds: 서버가 Common::HighResolutionTimer로 찍어 보낸 송신 시각
+		void OnPacketReceived(uint64_t sequenceId, uint64_t sendTimestampMicroseconds);
 
 		// 전송률 변경 후 새 기준으로 간격을 계산
 		void SetExpectedDataRate(Common::DataRate dataRate);
@@ -45,6 +52,9 @@ namespace Client {
 
 		// highestSequenceId_ 기준으로 너무 오래된 미수신 시퀀스는 확정 유실로 전환
 		void ExpireStaleMissingSequenceIds(uint64_t highestSequenceId);
+
+		// sendTimestampMicroseconds 대비 지금까지 걸린 시간을 지연으로 기록
+		void RecordLatency(uint64_t sendTimestampMicroseconds);
 
 	private:
 		// 이 범위보다 오래된 미수신 시퀀스는 다시 안 올 것으로 보고 확정 유실 처리
@@ -70,6 +80,12 @@ namespace Client {
 		double totalIntervalDeviationMilliseconds_ = 0.0;
 
 		uint64_t delayedPacketCount_ = 0;
+
+		bool hasLatencySample_ = false;
+		uint64_t latencySampleCount_ = 0;
+		double totalLatencyMilliseconds_ = 0.0;
+		double minLatencyMilliseconds_ = 0.0;
+		double maxLatencyMilliseconds_ = 0.0;
 
 		mutable std::mutex mutex_;
 	};

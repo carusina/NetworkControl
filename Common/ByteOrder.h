@@ -29,4 +29,20 @@ namespace Common {
         return IsLittleEndian() ? ByteSwap64(v) : v;
     }
 
+    inline uint32_t HostToNetwork32(uint32_t v) {
+        return htonl(v);
+    }
+
+    inline uint32_t NetworkToHost32(uint32_t v) {
+        return ntohl(v);
+    }
+
+    inline uint16_t HostToNetwork16(uint16_t v) {
+        return htons(v);
+    }
+
+    inline uint16_t NetworkToHost16(uint16_t v) {
+        return ntohs(v);
+    }
+
 } // namespace Common

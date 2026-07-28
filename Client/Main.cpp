@@ -1,5 +1,8 @@
+#include "EntityWorld.h"
+#include "TcpMessageReceiver.h"
 #include "UdpReceiver.h"
 
+#include "../Common/BinarySerializer.h"
 #include "../Common/Config.h"
 #include "../Common/Ipv4Endpoint.h"
 #include "../Common/Protocol.h"
@@ -40,9 +43,11 @@ namespace {
 		std::cout << "Average Interval: " << metrics.AverageReceiveIntervalMilliseconds << "ms" << ", Max Interval: " << metrics.MaxReceiveIntervalMilliseconds << "ms" << ", Average Deviation: " << metrics.AverageIntervalDeviationMilliseconds << "ms" << std::endl;
 
 		std::cout << "Delayed Packets: " << metrics.DelayedPacketCount << " / " << metrics.IntervalSampleCount << ", Delayed Packet Rate: " << metrics.DelayedPacketRate << "%" << std::endl;
+
+		std::cout << "Latency: avg " << metrics.AverageLatencyMilliseconds << "ms, min " << metrics.MinLatencyMilliseconds << "ms, max " << metrics.MaxLatencyMilliseconds << "ms (" << metrics.LatencySampleCount << " samples, same-machine only)" << std::endl;
 	}
 
-	// stats 화면이 3줄을 출력하므로, 다음 프레임을 그리기 전에 그만큼 커서를 올려 지움
+	// stats 화면이 4줄을 출력하므로, 다음 프레임을 그리기 전에 그만큼 커서를 올려 지움
 	void RunLiveStats(Client::UdpReceiver& udpReceiver)
 	{
 		std::cout << "Live stats - press any key to stop." << std::endl;
@@ -52,7 +57,7 @@ namespace {
 		while (!_kbhit())
 		{
 			if (!isFirstFrame) {
-				std::cout << "\x1b[3A\x1b[0J";
+				std::cout << "\x1b[4A\x1b[0J";
 			}
 			isFirstFrame = false;
 
@@ -67,6 +72,26 @@ namespace {
 		}
 	}
 
+	void PrintEntities(const Client::EntityWorld& entityWorld)
+	{
+		uint32_t myEntityId = 0;
+		const bool hasMyEntityId = entityWorld.TryGetMyEntityId(myEntityId);
+		const auto entities = entityWorld.GetSnapshot();
+
+		std::cout << std::fixed << std::setprecision(2);
+		std::cout << "Known entities: " << entities.size() << std::endl;
+
+		for (const auto& entity : entities)
+		{
+			std::cout << "  [" << entity.EntityId << "]"
+				<< ((hasMyEntityId && entity.EntityId == myEntityId) ? " (me)" : "")
+				<< " Pos(" << entity.PositionX << ", " << entity.PositionY << ")"
+				<< " Heading " << entity.Heading
+				<< " Vel(" << entity.VelocityX << ", " << entity.VelocityY << ")"
+				<< std::endl;
+		}
+	}
+
 	bool CreateServerEndpoint(const std::string& host, uint16_t port, Common::Ipv4Endpoint& endpoint)
 	{
 		if (!Common::Ipv4Endpoint::TryCreate(host, port, endpoint)) {
@@ -77,13 +102,11 @@ namespace {
 		return true;
 	}
 
-	bool SendCommand(Common::TcpSocket& tcpSocket, Common::CommandType command, uint32_t payload = 0)
+	bool SendMessage(Common::TcpSocket& tcpSocket, const Common::BinaryWriter& writer)
 	{
-		Common::ControlMessage message{};
-		message.Type = command;
-		message.Payload = htonl(payload);
+		const auto& data = writer.Data();
 
-		if (!tcpSocket.SendAll(&message, sizeof(message))) {
+		if (!tcpSocket.SendAll(data.data(), data.size())) {
 			std::cerr << "TCP command send failed: " << Common::TcpSocket::GetLastError() << std::endl;
 			return false;
 		}
@@ -91,16 +114,72 @@ namespace {
 		return true;
 	}
 
+	bool SendHeaderOnly(Common::TcpSocket& tcpSocket, Common::MessageType type)
+	{
+		Common::BinaryWriter writer;
+		Common::SerializeHeader(writer, type);
+		return SendMessage(tcpSocket, writer);
+	}
+
+	bool SendRegisterUdpPort(Common::TcpSocket& tcpSocket, uint16_t port)
+	{
+		Common::BinaryWriter writer;
+		Common::SerializeHeader(writer, Common::MessageType::RegisterUdpPort);
+
+		Common::RegisterUdpPortPayload payload;
+		payload.Port = port;
+		Common::SerializeRegisterUdpPort(writer, payload);
+
+		return SendMessage(tcpSocket, writer);
+	}
+
+	bool SendSetRate(Common::TcpSocket& tcpSocket, uint32_t dataRateHz)
+	{
+		Common::BinaryWriter writer;
+		Common::SerializeHeader(writer, Common::MessageType::SetRate);
+
+		Common::SetRatePayload payload;
+		payload.DataRateHz = dataRateHz;
+		Common::SerializeSetRate(writer, payload);
+
+		return SendMessage(tcpSocket, writer);
+	}
+
+	// std::clamp(C++17) 대신 - 이 프로젝트가 그보다 이전 표준으로 컴파일됨
+	float ClampInput(float value) {
+		if (value < -1.0f) return -1.0f;
+		if (value > 1.0f) return 1.0f;
+		return value;
+	}
+
+	// "thrust 0.5" / "yaw -0.2" 같은 명령에서 값을 파싱. 실패하면 false
+	bool TryParseFloatArgument(const std::string& input, size_t prefixLength, float& value)
+	{
+		try {
+			value = std::stof(input.substr(prefixLength));
+			return true;
+		}
+		catch (const std::exception&) {
+			return false;
+		}
+	}
+
 	bool RunClientControlLoop(const Common::ClientConfig& config)
 	{
-		Client::UdpReceiver udpReceiver;
+		Client::EntityWorld entityWorld;
+		Client::UdpReceiver udpReceiver(entityWorld);
 
 		if (!udpReceiver.Start(config.UdpPort)) {
 			return false;
 		}
 
-		Common::Ipv4Endpoint serverEndpoint;
-		if (!CreateServerEndpoint(config.Host, config.TcpPort, serverEndpoint)) {
+		Common::Ipv4Endpoint serverTcpEndpoint;
+		if (!CreateServerEndpoint(config.Host, config.TcpPort, serverTcpEndpoint)) {
+			return false;
+		}
+
+		Common::Ipv4Endpoint serverUdpEndpoint;
+		if (!CreateServerEndpoint(config.Host, config.ServerUdpPort, serverUdpEndpoint)) {
 			return false;
 		}
 
@@ -110,17 +189,24 @@ namespace {
 			return false;
 		}
 
-		if (!tcpSocket.Connect(serverEndpoint)) {
+		if (!tcpSocket.Connect(serverTcpEndpoint)) {
 			std::cerr << "TCP connect failed: " << Common::TcpSocket::GetLastError() << std::endl;
 			return false;
 		}
 
-		if (!SendCommand(tcpSocket, Common::CommandType::RegisterUdpPort, config.UdpPort)) {
+		if (!SendRegisterUdpPort(tcpSocket, config.UdpPort)) {
 			return false;
 		}
 
+		// tcpSocket보다 나중에 선언 - Stop()에서 소켓을 닫으므로 tcpSocket이 먼저 파괴되면 안 됨
+		Client::TcpMessageReceiver tcpMessageReceiver(tcpSocket, entityWorld);
+		tcpMessageReceiver.Start();
+
 		std::cout << "UDP port " << config.UdpPort << " registered." << std::endl;
-		std::cout << "Commands: play, pause, stop, reset, 30, 60, stats, quit" << std::endl;
+		std::cout << "Commands: play, pause, stop, reset, 30, 60, thrust <-1..1>, yaw <-1..1>, stats, entities, quit" << std::endl;
+
+		float lastThrottle = 0.0f;
+		float lastYaw = 0.0f;
 
 		std::string input;
 
@@ -134,38 +220,74 @@ namespace {
 			}
 
 			if (input == "play") {
-				if (!SendCommand(tcpSocket, Common::CommandType::Play)) {
+				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Play)) {
 					return false;
 				}
+
+				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "pause") {
-				if (!SendCommand(tcpSocket, Common::CommandType::Pause)) {
+				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Pause)) {
 					return false;
 				}
+
+				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "stop") {
-				if (!SendCommand(tcpSocket, Common::CommandType::Stop)) {
+				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Stop)) {
 					return false;
 				}
+
+				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "reset") {
-				if (!SendCommand(tcpSocket, Common::CommandType::Reset)) {
+				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Reset)) {
 					return false;
 				}
+
+				udpReceiver.ResetMetrics();
+				lastThrottle = 0.0f;
+				lastYaw = 0.0f;
 			}
 			else if (input == "30") {
-				if (!SendCommand(tcpSocket, Common::CommandType::SetRate, static_cast<uint32_t>(Common::DataRate::Hz30))) {
+				if (!SendSetRate(tcpSocket, static_cast<uint32_t>(Common::DataRate::Hz30))) {
 					return false;
 				}
 
 				udpReceiver.SetExpectedDataRate(Common::DataRate::Hz30);
 			}
 			else if (input == "60") {
-				if (!SendCommand(tcpSocket, Common::CommandType::SetRate, static_cast<uint32_t>(Common::DataRate::Hz60))) {
+				if (!SendSetRate(tcpSocket, static_cast<uint32_t>(Common::DataRate::Hz60))) {
 					return false;
 				}
 
 				udpReceiver.SetExpectedDataRate(Common::DataRate::Hz60);
+			}
+			else if (input.rfind("thrust ", 0) == 0)
+			{
+				float value = 0.0f;
+				if (!TryParseFloatArgument(input, 7, value)) {
+					std::cout << "Usage: thrust <-1..1>" << std::endl;
+				}
+				else {
+					lastThrottle = ClampInput(value);
+					udpReceiver.SendControlInput(serverUdpEndpoint, lastThrottle, lastYaw);
+				}
+			}
+			else if (input.rfind("yaw ", 0) == 0)
+			{
+				float value = 0.0f;
+				if (!TryParseFloatArgument(input, 4, value)) {
+					std::cout << "Usage: yaw <-1..1>" << std::endl;
+				}
+				else {
+					lastYaw = ClampInput(value);
+					udpReceiver.SendControlInput(serverUdpEndpoint, lastThrottle, lastYaw);
+				}
+			}
+			else if (input == "entities")
+			{
+				PrintEntities(entityWorld);
 			}
 			else if (input == "stats")
 			{

@@ -79,6 +79,7 @@ bool LoadServerConfig(const std::string& path, ServerConfig& config)
     }
 
     ApplyPort(values, "TcpPort", config.TcpPort);
+    ApplyPort(values, "UdpPort", config.UdpPort);
     return true;
 }
 
@@ -96,6 +97,7 @@ bool LoadClientConfig(const std::string& path, ClientConfig& config)
 
     ApplyPort(values, "TcpPort", config.TcpPort);
     ApplyPort(values, "UdpPort", config.UdpPort);
+    ApplyPort(values, "ServerUdpPort", config.ServerUdpPort);
 
     return true;
 }

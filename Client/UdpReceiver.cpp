@@ -1,9 +1,11 @@
 #include "UdpReceiver.h"
 
-#include "../Common/Protocol.h"
-#include "../Common/ByteOrder.h"
+#include "../Common/BinarySerializer.h"
 
 namespace Client {
+
+	UdpReceiver::UdpReceiver(EntityWorld& entityWorld)
+		: entityWorld_(entityWorld) { }
 
 	UdpReceiver::~UdpReceiver() {
 		Stop();
@@ -42,7 +44,7 @@ namespace Client {
 	void UdpReceiver::ResetMetrics() {
 		metricsCollector_.Reset();
 	}
-	
+
 	MetricsSnapshot UdpReceiver::GetMetrics() const {
 		return metricsCollector_.GetSnapshot();
 	}
@@ -51,16 +53,28 @@ namespace Client {
 	{
 		while (isRunning_)
 		{
-			Common::Packet packet{};
+			uint8_t buffer[64]{};
 			Common::Ipv4Endpoint sender;
-			const int received = udpSocket_.ReceiveFrom(&packet, sizeof(packet), sender);
+			const int received = udpSocket_.ReceiveFrom(buffer, sizeof(buffer), sender);
 
-			if (received == sizeof(packet)) {
-				packet.SequenceId = Common::NetworkToHost64(packet.SequenceId);
-				packet.Timestamp = Common::NetworkToHost64(packet.Timestamp);
-
-				metricsCollector_.OnPacketReceived(packet.SequenceId);
+			if (received <= 0) {
+				continue;
 			}
+
+			Common::BinaryReader reader(buffer, static_cast<size_t>(received));
+
+			Common::MessageType type{};
+			if (!Common::TryDeserializeHeader(reader, type) || type != Common::MessageType::EntityState) {
+				continue;
+			}
+
+			Common::EntityStatePayload payload;
+			if (!Common::TryDeserializeEntityState(reader, payload)) {
+				continue;
+			}
+
+			metricsCollector_.OnPacketReceived(payload.SequenceId, payload.Timestamp);
+			entityWorld_.OnState(payload);
 		}
 	}
 
@@ -70,6 +84,22 @@ namespace Client {
 
 	void UdpReceiver::ResetReceiveTiming() {
 		metricsCollector_.ResetReceiveTiming();
+	}
+
+	bool UdpReceiver::SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, float throttle, float yaw)
+	{
+		Common::EntityControlInputPayload payload;
+		payload.Throttle = throttle;
+		payload.Yaw = yaw;
+
+		Common::BinaryWriter writer;
+		Common::SerializeHeader(writer, Common::MessageType::EntityControlInput);
+		Common::SerializeEntityControlInput(writer, payload);
+
+		const auto& data = writer.Data();
+		const int sent = udpSocket_.SendTo(data.data(), static_cast<int>(data.size()), serverEndpoint);
+
+		return sent == static_cast<int>(data.size());
 	}
 
 } // namespace Client

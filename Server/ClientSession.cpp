@@ -1,64 +1,92 @@
 #include "ClientSession.h"
 
+#include <cmath>
 #include <iostream>
 
 namespace Server {
 
+	namespace {
+
+		// 물리 모델 상수 - 시작점으로 잡은 값, 나중에 튜닝 가능
+		constexpr float YawRateMaxRadiansPerSecond = 2.0f;
+		constexpr float AccelerationUnitsPerSecondSquared = 20.0f;
+		constexpr float MaxSpeedUnitsPerSecond = 50.0f;
+
+		// std::clamp(C++17) 대신 - 이 프로젝트가 그보다 이전 표준으로 컴파일됨
+		float Clamp(float value, float minValue, float maxValue) {
+			if (value < minValue) return minValue;
+			if (value > maxValue) return maxValue;
+			return value;
+		}
+
+	} // namespace
+
 	ClientSession::ClientSession(uint64_t sessionId, std::shared_ptr<Common::TcpSocket> controlSocket)
 		: sessionId_(sessionId), controlSocket_(std::move(controlSocket)) { }
 
-	void ClientSession::ProcessCommand(Common::CommandType command, uint32_t payload)
+	void ClientSession::Play()
 	{
-		switch (command)
+		if (state_ == Common::SessionState::Stopped || state_ == Common::SessionState::Paused)
 		{
-			case Common::CommandType::Play:
-				if (state_ == Common::SessionState::Stopped || state_ == Common::SessionState::Paused)
-				{
-					state_ = Common::SessionState::Playing;
-					std::cout << "[Session " << sessionId_ << "] Playing" << std::endl;
-				}
-				break;
+			state_ = Common::SessionState::Playing;
+			std::cout << "[Session " << sessionId_ << "] Playing" << std::endl;
+		}
+	}
 
-			case Common::CommandType::Pause:
-				if (state_ == Common::SessionState::Playing)
-				{
-					state_ = Common::SessionState::Paused;
-					std::cout << "[Session " << sessionId_ << "] Paused" << std::endl;
-				}
-				break;
+	void ClientSession::Pause()
+	{
+		if (state_ == Common::SessionState::Playing)
+		{
+			state_ = Common::SessionState::Paused;
+			std::cout << "[Session " << sessionId_ << "] Paused" << std::endl;
+		}
+	}
 
-			case Common::CommandType::Stop:
-				if (state_ != Common::SessionState::Stopped)
-				{
-					state_ = Common::SessionState::Stopped;
-					std::cout << "[Session " << sessionId_ << "] Stopped" << std::endl;
-				}
-				break;
+	void ClientSession::Stop()
+	{
+		if (state_ != Common::SessionState::Stopped)
+		{
+			state_ = Common::SessionState::Stopped;
+			std::cout << "[Session " << sessionId_ << "] Stopped" << std::endl;
+		}
+	}
 
-			case Common::CommandType::Reset:
-				state_ = Common::SessionState::Stopped;
-				dataRate_ = Common::DataRate::Hz30;
-				nextSequenceId_ = 0;
+	void ClientSession::Reset()
+	{
+		state_ = Common::SessionState::Stopped;
+		dataRate_ = Common::DataRate::Hz30;
+		nextSequenceId_ = 0;
 
-				std::cout << "[Session " << sessionId_ << "] Reset: Stopped, 30Hz, SequenceId 0" << std::endl;
-				break;
+		{
+			std::lock_guard<std::mutex> lock(entityMutex_);
+			positionX_ = 0.0f;
+			positionY_ = 0.0f;
+			heading_ = 0.0f;
+			speed_ = 0.0f;
+			velocityX_ = 0.0f;
+			velocityY_ = 0.0f;
+			throttle_ = 0.0f;
+			yaw_ = 0.0f;
+		}
 
-			case Common::CommandType::SetRate:
-				if (payload == static_cast<uint32_t>(Common::DataRate::Hz30))
-				{
-					dataRate_ = Common::DataRate::Hz30;
-					std::cout << "[Session " << sessionId_ << "] Rate: 30Hz" << std::endl;
-				}
-				else if (payload == static_cast<uint32_t>(Common::DataRate::Hz60))
-				{
-					dataRate_ = Common::DataRate::Hz60;
-					std::cout << "[Session " << sessionId_ << "] Rate: 60Hz" << std::endl;
-				}
-				else
-				{
-					std::cout << "[Session " << sessionId_ << "] Invalid rate: " << payload << std::endl;
-				}
-				break;
+		std::cout << "[Session " << sessionId_ << "] Reset: Stopped, 30Hz, SequenceId 0, entity origin" << std::endl;
+	}
+
+	void ClientSession::SetRate(uint32_t dataRateHz)
+	{
+		if (dataRateHz == static_cast<uint32_t>(Common::DataRate::Hz30))
+		{
+			dataRate_ = Common::DataRate::Hz30;
+			std::cout << "[Session " << sessionId_ << "] Rate: 30Hz" << std::endl;
+		}
+		else if (dataRateHz == static_cast<uint32_t>(Common::DataRate::Hz60))
+		{
+			dataRate_ = Common::DataRate::Hz60;
+			std::cout << "[Session " << sessionId_ << "] Rate: 60Hz" << std::endl;
+		}
+		else
+		{
+			std::cout << "[Session " << sessionId_ << "] Invalid rate: " << dataRateHz << std::endl;
 		}
 	}
 
@@ -74,6 +102,10 @@ namespace Server {
 
 	uint64_t ClientSession::GetSessionId() const {
 		return sessionId_;
+	}
+
+	uint32_t ClientSession::GetEntityId() const {
+		return static_cast<uint32_t>(sessionId_);
 	}
 
 	Common::SessionState ClientSession::GetState() const {
@@ -103,6 +135,63 @@ namespace Server {
 
 	Common::TcpSocket& ClientSession::GetControlSocket() {
 		return *controlSocket_;
+	}
+
+	void ClientSession::ApplyControlInput(float throttle, float yaw)
+	{
+		std::lock_guard<std::mutex> lock(entityMutex_);
+
+		throttle_ = Clamp(throttle, -1.0f, 1.0f);
+		yaw_ = Clamp(yaw, -1.0f, 1.0f);
+	}
+
+	void ClientSession::StepPhysics(double deltaSeconds)
+	{
+		std::lock_guard<std::mutex> lock(entityMutex_);
+
+		const float dt = static_cast<float>(deltaSeconds);
+
+		heading_ += yaw_ * YawRateMaxRadiansPerSecond * dt;
+
+		speed_ += throttle_ * AccelerationUnitsPerSecondSquared * dt;
+		speed_ = Clamp(speed_, -MaxSpeedUnitsPerSecond, MaxSpeedUnitsPerSecond);
+
+		velocityX_ = std::cos(heading_) * speed_;
+		velocityY_ = std::sin(heading_) * speed_;
+
+		positionX_ += velocityX_ * dt;
+		positionY_ += velocityY_ * dt;
+	}
+
+	Common::EntityStatePayload ClientSession::BuildEntityStatePayload(uint64_t sequenceId, uint64_t timestampMicroseconds) const
+	{
+		std::lock_guard<std::mutex> lock(entityMutex_);
+
+		Common::EntityStatePayload payload;
+		payload.SequenceId = sequenceId;
+		payload.Timestamp = timestampMicroseconds;
+		payload.EntityId = GetEntityId();
+		payload.PositionX = positionX_;
+		payload.PositionY = positionY_;
+		payload.Heading = heading_;
+		payload.VelocityX = velocityX_;
+		payload.VelocityY = velocityY_;
+
+		return payload;
+	}
+
+	Common::EntitySpawnPayload ClientSession::BuildEntitySpawnPayload() const
+	{
+		std::lock_guard<std::mutex> lock(entityMutex_);
+
+		Common::EntitySpawnPayload payload;
+		payload.EntityId = GetEntityId();
+		payload.Type = Common::EntityType::PlayerHelicopter;
+		payload.PositionX = positionX_;
+		payload.PositionY = positionY_;
+		payload.Heading = heading_;
+
+		return payload;
 	}
 
 	void ClientSession::StopSession()

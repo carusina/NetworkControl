@@ -23,7 +23,9 @@
     <ClInclude Include="ClientSession.h" />
     <ClInclude Include="SessionManager.h" />
     <ClInclude Include="TcpControlServer.h" />
+    <ClInclude Include="UdpControlInputReceiver.h" />
     <ClInclude Include="UdpStreamingService.h" />
+    <ClInclude Include="..\Common\BinarySerializer.h" />
     <ClInclude Include="..\Common\Config.h" />
     <ClInclude Include="..\Common\HighResolutionTimer.h" />
     <ClInclude Include="..\Common\Ipv4Endpoint.h" />
@@ -38,9 +40,12 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="SessionManager.cpp" />
     <ClCompile Include="TcpControlServer.cpp" />
+    <ClCompile Include="UdpControlInputReceiver.cpp" />
     <ClCompile Include="UdpStreamingService.cpp" />
+    <ClCompile Include="..\Common\BinarySerializer.cpp" />
     <ClCompile Include="..\Common\Config.cpp" />
     <ClCompile Include="..\Common\Ipv4Endpoint.cpp" />
+    <ClCompile Include="..\Common\Protocol.cpp" />
     <ClCompile Include="..\Common\SocketRuntime.cpp" />
     <ClCompile Include="..\Common\TcpSocket.cpp" />
     <ClCompile Include="..\Common\UdpSocket.cpp" />

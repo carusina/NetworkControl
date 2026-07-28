@@ -124,8 +124,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\ByteOrder.h" />
+    <ClInclude Include="EntityWorld.h" />
     <ClInclude Include="MetricsCollector.h" />
+    <ClInclude Include="TcpMessageReceiver.h" />
     <ClInclude Include="UdpReceiver.h" />
+    <ClInclude Include="..\Common\BinarySerializer.h" />
     <ClInclude Include="..\Common\Config.h" />
     <ClInclude Include="..\Common\HighResolutionTimer.h" />
     <ClInclude Include="..\Common\Ipv4Endpoint.h" />
@@ -136,11 +139,15 @@
     <ClInclude Include="..\Common\UdpSocket.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="EntityWorld.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="MetricsCollector.cpp" />
+    <ClCompile Include="TcpMessageReceiver.cpp" />
     <ClCompile Include="UdpReceiver.cpp" />
+    <ClCompile Include="..\Common\BinarySerializer.cpp" />
     <ClCompile Include="..\Common\Config.cpp" />
     <ClCompile Include="..\Common\Ipv4Endpoint.cpp" />
+    <ClCompile Include="..\Common\Protocol.cpp" />
     <ClCompile Include="..\Common\SocketRuntime.cpp" />
     <ClCompile Include="..\Common\TcpSocket.cpp" />
     <ClCompile Include="..\Common\UdpSocket.cpp" />

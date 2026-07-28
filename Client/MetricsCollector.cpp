@@ -1,16 +1,19 @@
 #include "MetricsCollector.h"
 
+#include "../Common/HighResolutionTimer.h"
+
 #include <cmath>
 
 namespace Client {
 
-	void MetricsCollector::OnPacketReceived(uint64_t sequenceId)
+	void MetricsCollector::OnPacketReceived(uint64_t sequenceId, uint64_t sendTimestampMicroseconds)
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
 
 		const auto receivedTime = std::chrono::steady_clock::now();
-		
+
 		++totalReceivedCount_;
+		RecordLatency(sendTimestampMicroseconds);
 
 		if (!hasReceivedPacket_)
 		{
@@ -81,6 +84,12 @@ namespace Client {
 		totalIntervalDeviationMilliseconds_ = 0.0;
 
 		delayedPacketCount_ = 0;
+
+		hasLatencySample_ = false;
+		latencySampleCount_ = 0;
+		totalLatencyMilliseconds_ = 0.0;
+		minLatencyMilliseconds_ = 0.0;
+		maxLatencyMilliseconds_ = 0.0;
 	}
 
 	MetricsSnapshot MetricsCollector::GetSnapshot() const
@@ -113,6 +122,15 @@ namespace Client {
 		}
 
 		snapshot.DelayedPacketCount = delayedPacketCount_;
+
+		snapshot.LatencySampleCount = latencySampleCount_;
+
+		if (latencySampleCount_ != 0)
+		{
+			snapshot.AverageLatencyMilliseconds = totalLatencyMilliseconds_ / static_cast<double>(latencySampleCount_);
+			snapshot.MinLatencyMilliseconds = minLatencyMilliseconds_;
+			snapshot.MaxLatencyMilliseconds = maxLatencyMilliseconds_;
+		}
 
 		return snapshot;
 	}
@@ -166,6 +184,33 @@ namespace Client {
 
 	double MetricsCollector::GetExpectedIntervalMilliseconds() const {
 		return 1000.0 / static_cast<double>(static_cast<uint32_t>(expectedDataRate_));
+	}
+
+	void MetricsCollector::RecordLatency(uint64_t sendTimestampMicroseconds)
+	{
+		const uint64_t nowMicroseconds = Common::HighResolutionTimer::GetMicroseconds();
+
+		// steady_clock의 0점은 "이 컴퓨터가 부팅된 시점"이라, 서버와 클라이언트가 서로 다른
+		// 컴퓨터에서 실행 중이면 두 시계 기준이 달라 뺄셈 결과가 의미 없어짐(음수 포함).
+		// 같은 컴퓨터에서 실행 중일 때만 유효한 값으로 취급.
+		if (nowMicroseconds < sendTimestampMicroseconds) {
+			return;
+		}
+
+		const double latencyMilliseconds = static_cast<double>(nowMicroseconds - sendTimestampMicroseconds) / 1000.0;
+
+		++latencySampleCount_;
+		totalLatencyMilliseconds_ += latencyMilliseconds;
+
+		if (!hasLatencySample_ || latencyMilliseconds < minLatencyMilliseconds_) {
+			minLatencyMilliseconds_ = latencyMilliseconds;
+		}
+
+		if (!hasLatencySample_ || latencyMilliseconds > maxLatencyMilliseconds_) {
+			maxLatencyMilliseconds_ = latencyMilliseconds;
+		}
+
+		hasLatencySample_ = true;
 	}
 
 	void MetricsCollector::ExpireStaleMissingSequenceIds(uint64_t highestSequenceId)

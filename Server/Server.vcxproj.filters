@@ -27,6 +27,12 @@
     <ClInclude Include="UdpStreamingService.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UdpControlInputReceiver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\BinarySerializer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\Common\Config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -68,13 +74,22 @@
     <ClCompile Include="UdpStreamingService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UdpControlInputReceiver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\BinarySerializer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\Common\Config.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\Common\Ipv4Endpoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\Protocol.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\Common\SocketRuntime.cpp">

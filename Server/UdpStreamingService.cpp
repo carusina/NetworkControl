@@ -1,10 +1,10 @@
 #include "UdpStreamingService.h"
 
+#include "../Common/BinarySerializer.h"
 #include "../Common/HighResolutionTimer.h"
 #include "../Common/Ipv4Endpoint.h"
 #include "../Common/Protocol.h"
 #include "../Common/TimerCompensator.h"
-#include "../Common/ByteOrder.h"
 
 #include <iostream>
 #include <string>
@@ -50,9 +50,11 @@ namespace Server {
 
 	void UdpStreamingService::Worker()
 	{
-		// 60Hz를 기준 틱으로 사용하고, 30Hz는 두 틱마다 전송
+		// 60Hz를 기준 틱으로 사용하고, 30Hz는 두 틱마다 전송. 물리 시뮬레이션은 항상 60Hz로 돌림
 		Common::TimerCompensator timer(Common::DataRate::Hz60);
 		uint64_t tickCount = 0;
+
+		constexpr double FixedDeltaSeconds = 1.0 / static_cast<double>(static_cast<uint32_t>(Common::DataRate::Hz60));
 
 		while (isRunning_)
 		{
@@ -61,20 +63,31 @@ namespace Server {
 
 			const auto sessions = sessionManager_.GetSessionsSnapshot();
 
+			// 1) Playing 상태인 모든 엔티티의 물리를 한 틱 진행
 			for (const auto& session : sessions)
 			{
-				if (session->GetState() != Common::SessionState::Playing) {
+				if (session->GetState() == Common::SessionState::Playing) {
+					session->StepPhysics(FixedDeltaSeconds);
+				}
+			}
+
+			const uint64_t timestamp = Common::HighResolutionTimer::GetMicroseconds();
+
+			// 2) Playing 상태인 각 수신자에게, Playing 상태인 모든 엔티티의 상태를 전송(엔티티당 패킷 1개)
+			for (const auto& recipient : sessions)
+			{
+				if (recipient->GetState() != Common::SessionState::Playing) {
 					continue;
 				}
 
-				if (session->GetDataRate() == Common::DataRate::Hz30 && tickCount % 2 != 0) {
+				if (recipient->GetDataRate() == Common::DataRate::Hz30 && tickCount % 2 != 0) {
 					continue;
 				}
 
 				std::string ipAddress;
 				uint16_t udpPort = 0;
-				
-				if (!session->TryGetUdpEndpoint(ipAddress, udpPort)) {
+
+				if (!recipient->TryGetUdpEndpoint(ipAddress, udpPort)) {
 					continue;
 				}
 
@@ -83,14 +96,25 @@ namespace Server {
 					continue;
 				}
 
-				Common::Packet packet{};
-				packet.SequenceId = Common::HostToNetwork64(session->GetNextSequenceId());
-				packet.Timestamp = Common::HostToNetwork64(Common::HighResolutionTimer::GetMicroseconds());
+				for (const auto& entitySession : sessions)
+				{
+					if (entitySession->GetState() != Common::SessionState::Playing) {
+						continue;
+					}
 
-				const int sent = udpSocket_.SendTo(&packet, sizeof(packet), endpoint);
+					const Common::EntityStatePayload statePayload =
+						entitySession->BuildEntityStatePayload(recipient->GetNextSequenceId(), timestamp);
 
-				if (sent != sizeof(packet)) {
-					std::cerr << "[Session " << session->GetSessionId() << "] UDP send failed: " << Common::UdpSocket::GetLastError() << std::endl;
+					Common::BinaryWriter writer;
+					Common::SerializeHeader(writer, Common::MessageType::EntityState);
+					Common::SerializeEntityState(writer, statePayload);
+
+					const auto& data = writer.Data();
+					const int sent = udpSocket_.SendTo(data.data(), static_cast<int>(data.size()), endpoint);
+
+					if (sent != static_cast<int>(data.size())) {
+						std::cerr << "[Session " << recipient->GetSessionId() << "] UDP send failed: " << Common::UdpSocket::GetLastError() << std::endl;
+					}
 				}
 			}
 		}
