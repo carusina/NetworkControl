@@ -1,19 +1,14 @@
-#include "EntityWorld.h"
-#include "TcpMessageReceiver.h"
-#include "UdpReceiver.h"
+#include "../ClientCore/GameClient.h"
 
-#include "../Common/BinarySerializer.h"
 #include "../Common/Config.h"
-#include "../Common/Ipv4Endpoint.h"
-#include "../Common/Protocol.h"
 #include "../Common/SocketRuntime.h"
-#include "../Common/TcpSocket.h"
 
 #include <conio.h>
 #include <Windows.h>
 
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -51,11 +46,11 @@ namespace {
 	}
 
 	// 알려진 엔티티 수에 따라 줄 수가 매번 달라지므로, 실제 출력한 줄 수를 반환
-	int PrintEntities(const Client::EntityWorld& entityWorld)
+	int PrintEntities(const Client::GameClient& gameClient)
 	{
 		uint32_t myEntityId = 0;
-		const bool hasMyEntityId = entityWorld.TryGetMyEntityId(myEntityId);
-		const auto entities = entityWorld.GetSnapshot();
+		const bool hasMyEntityId = gameClient.TryGetMyEntityId(myEntityId);
+		const auto entities = gameClient.GetEntities();
 
 		std::cout << std::fixed << std::setprecision(2);
 		std::cout << "Known entities: " << entities.size() << std::endl;
@@ -100,66 +95,6 @@ namespace {
 		}
 	}
 
-	bool CreateServerEndpoint(const std::string& host, uint16_t port, Common::Ipv4Endpoint& endpoint)
-	{
-		if (!Common::Ipv4Endpoint::TryCreate(host, port, endpoint)) {
-			std::cerr << "Server endpoint creation failed." << std::endl;
-			return false;
-		}
-
-		return true;
-	}
-
-	bool SendMessage(Common::TcpSocket& tcpSocket, const Common::BinaryWriter& writer)
-	{
-		const auto& data = writer.Data();
-
-		if (!tcpSocket.SendAll(data.data(), data.size())) {
-			std::cerr << "TCP command send failed: " << Common::TcpSocket::GetLastError() << std::endl;
-			return false;
-		}
-
-		return true;
-	}
-
-	bool SendHeaderOnly(Common::TcpSocket& tcpSocket, Common::MessageType type)
-	{
-		Common::BinaryWriter writer;
-		Common::SerializeHeader(writer, type);
-		return SendMessage(tcpSocket, writer);
-	}
-
-	bool SendRegisterUdpPort(Common::TcpSocket& tcpSocket, uint16_t port)
-	{
-		Common::BinaryWriter writer;
-		Common::SerializeHeader(writer, Common::MessageType::RegisterUdpPort);
-
-		Common::RegisterUdpPortPayload payload;
-		payload.Port = port;
-		Common::SerializeRegisterUdpPort(writer, payload);
-
-		return SendMessage(tcpSocket, writer);
-	}
-
-	bool SendSetRate(Common::TcpSocket& tcpSocket, uint32_t dataRateHz)
-	{
-		Common::BinaryWriter writer;
-		Common::SerializeHeader(writer, Common::MessageType::SetRate);
-
-		Common::SetRatePayload payload;
-		payload.DataRateHz = dataRateHz;
-		Common::SerializeSetRate(writer, payload);
-
-		return SendMessage(tcpSocket, writer);
-	}
-
-	// std::clamp(C++17) 대신 - 이 프로젝트가 그보다 이전 표준으로 컴파일됨
-	float ClampInput(float value) {
-		if (value < -1.0f) return -1.0f;
-		if (value > 1.0f) return 1.0f;
-		return value;
-	}
-
 	// "thrust 0.5" / "yaw -0.2" 같은 명령에서 값을 파싱. 실패하면 false
 	bool TryParseFloatArgument(const std::string& input, size_t prefixLength, float& value)
 	{
@@ -172,60 +107,13 @@ namespace {
 		}
 	}
 
-	// 아직 첫 EntitySpawn을 못 받아 내 EntityId를 모르면 조종 입력을 보낼 수 없음
-	void SendControlInputIfKnown(
-		Client::UdpReceiver& udpReceiver,
-		const Client::EntityWorld& entityWorld,
-		const Common::Ipv4Endpoint& serverUdpEndpoint,
-		float throttle,
-		float yaw)
-	{
-		uint32_t myEntityId = 0;
-		if (!entityWorld.TryGetMyEntityId(myEntityId)) {
-			std::cout << "Not registered yet - try again in a moment." << std::endl;
-			return;
-		}
-
-		udpReceiver.SendControlInput(serverUdpEndpoint, myEntityId, throttle, yaw);
-	}
-
 	bool RunClientControlLoop(const Common::ClientConfig& config)
 	{
-		Client::EntityWorld entityWorld;
-		Client::UdpReceiver udpReceiver(entityWorld);
+		Client::GameClient gameClient;
 
-		if (!udpReceiver.Start(config.UdpPort)) {
+		if (!gameClient.Connect(config)) {
 			return false;
 		}
-
-		Common::Ipv4Endpoint serverTcpEndpoint;
-		if (!CreateServerEndpoint(config.Host, config.TcpPort, serverTcpEndpoint)) {
-			return false;
-		}
-
-		Common::Ipv4Endpoint serverUdpEndpoint;
-		if (!CreateServerEndpoint(config.Host, config.ServerUdpPort, serverUdpEndpoint)) {
-			return false;
-		}
-
-		Common::TcpSocket tcpSocket;
-		if (!tcpSocket.Create()) {
-			std::cerr << "TCP socket creation failed: " << Common::TcpSocket::GetLastError() << std::endl;
-			return false;
-		}
-
-		if (!tcpSocket.Connect(serverTcpEndpoint)) {
-			std::cerr << "TCP connect failed: " << Common::TcpSocket::GetLastError() << std::endl;
-			return false;
-		}
-
-		if (!SendRegisterUdpPort(tcpSocket, config.UdpPort)) {
-			return false;
-		}
-
-		// tcpSocket보다 나중에 선언 - Stop()에서 소켓을 닫으므로 tcpSocket이 먼저 파괴되면 안 됨
-		Client::TcpMessageReceiver tcpMessageReceiver(tcpSocket, entityWorld);
-		tcpMessageReceiver.Start();
 
 		std::cout << "UDP port " << config.UdpPort << " registered." << std::endl;
 		std::cout << "Commands: play, pause, stop, reset, 30, 60, thrust <-1..1>, yaw <-1..1>, stats, entities, quit" << std::endl;
@@ -245,48 +133,37 @@ namespace {
 			}
 
 			if (input == "play") {
-				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Play)) {
+				if (!gameClient.Play()) {
 					return false;
 				}
-
-				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "pause") {
-				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Pause)) {
+				if (!gameClient.Pause()) {
 					return false;
 				}
-
-				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "stop") {
-				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Stop)) {
+				if (!gameClient.Stop()) {
 					return false;
 				}
-
-				udpReceiver.ResetReceiveTiming();
 			}
 			else if (input == "reset") {
-				if (!SendHeaderOnly(tcpSocket, Common::MessageType::Reset)) {
+				if (!gameClient.Reset()) {
 					return false;
 				}
 
-				udpReceiver.ResetMetrics();
 				lastThrottle = 0.0f;
 				lastYaw = 0.0f;
 			}
 			else if (input == "30") {
-				if (!SendSetRate(tcpSocket, static_cast<uint32_t>(Common::DataRate::Hz30))) {
+				if (!gameClient.SetRate(Common::DataRate::Hz30)) {
 					return false;
 				}
-
-				udpReceiver.SetExpectedDataRate(Common::DataRate::Hz30);
 			}
 			else if (input == "60") {
-				if (!SendSetRate(tcpSocket, static_cast<uint32_t>(Common::DataRate::Hz60))) {
+				if (!gameClient.SetRate(Common::DataRate::Hz60)) {
 					return false;
 				}
-
-				udpReceiver.SetExpectedDataRate(Common::DataRate::Hz60);
 			}
 			else if (input.rfind("thrust ", 0) == 0)
 			{
@@ -295,8 +172,10 @@ namespace {
 					std::cout << "Usage: thrust <-1..1>" << std::endl;
 				}
 				else {
-					lastThrottle = ClampInput(value);
-					SendControlInputIfKnown(udpReceiver, entityWorld, serverUdpEndpoint, lastThrottle, lastYaw);
+					lastThrottle = value;
+					if (!gameClient.SendControlInput(lastThrottle, lastYaw)) {
+						std::cout << "Not registered yet - try again in a moment." << std::endl;
+					}
 				}
 			}
 			else if (input.rfind("yaw ", 0) == 0)
@@ -306,17 +185,19 @@ namespace {
 					std::cout << "Usage: yaw <-1..1>" << std::endl;
 				}
 				else {
-					lastYaw = ClampInput(value);
-					SendControlInputIfKnown(udpReceiver, entityWorld, serverUdpEndpoint, lastThrottle, lastYaw);
+					lastYaw = value;
+					if (!gameClient.SendControlInput(lastThrottle, lastYaw)) {
+						std::cout << "Not registered yet - try again in a moment." << std::endl;
+					}
 				}
 			}
 			else if (input == "entities")
 			{
-				RunLiveView([&entityWorld]() { return PrintEntities(entityWorld); });
+				RunLiveView([&gameClient]() { return PrintEntities(gameClient); });
 			}
 			else if (input == "stats")
 			{
-				RunLiveView([&udpReceiver]() { return PrintMetrics(udpReceiver.GetMetrics()); });
+				RunLiveView([&gameClient]() { return PrintMetrics(gameClient.GetMetrics()); });
 			}
 			else {
 				std::cout << "Unknown command." << std::endl;

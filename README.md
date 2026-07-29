@@ -1,19 +1,20 @@
 # NetworkControl
 
-TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. 현재는 **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 콘솔 앱으로 구현한 단계이고, 이후 Client를 C++ Core(.lib) → C++/CLI Wrapper(.dll) → C# WPF GUI로 확장할 계획이다.
+TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 구현했고, 지금은 Client 네트워킹 로직을 재사용 가능한 라이브러리(`ClientCore`)로 뽑아낸 상태 — 다음은 이 위에 C++/CLI Wrapper(.dll) → C# WPF GUI를 얹는 단계.
 
 ## 기술 스택 / 빌드 환경
 
 - Windows, Visual Studio 2022 (v143 toolset), C++17 이전 표준(`std::clamp` 등 C++17 전용 stdlib 함수는 못 씀 — 프로젝트 표준을 올리지 않고 직접 만든 헬퍼로 대체하는 관례)
 - 순수 Winsock2 기반, 외부 라이브러리 의존성 없음 (JSON/vcpkg 패키지 미사용)
-- 솔루션 2개: `Server/Server.sln`, `Client/Client.sln`. 둘 다 `Common/` 소스를 직접 컴파일 목록에 포함해서 링크한다 — **Common에 파일을 추가하면 `Server.vcxproj`와 `Client.vcxproj` 양쪽에 수동으로 `ClCompile`/`ClInclude` 항목을 추가해야 한다** (자동으로 안 잡힘, 이 프로젝트에서 반복적으로 겪은 이슈).
+- 솔루션 2개: `Server/Server.sln`, `Client/Client.sln`(+ `ClientCore.vcxproj`를 프로젝트 참조로 포함). `Common/` 소스는 각 최상위 프로젝트(`Server`, `ClientCore`)가 직접 컴파일 목록에 포함해서 링크한다 — **Common에 파일을 추가하면 `Server.vcxproj`와 `ClientCore.vcxproj` 양쪽에 수동으로 `ClCompile`/`ClInclude` 항목을 추가해야 한다** (자동으로 안 잡힘, 이 프로젝트에서 반복적으로 겪은 이슈).
 
 ## 프로젝트 구조
 
 ```
-Common/     서버·클라이언트가 공유하는 프로토콜, 소켓 RAII 래퍼, 타이머, 설정 로더
-Server/     TCP 제어 + UDP 물리 시뮬레이션/브로드캐스트 콘솔 앱
-Client/     TCP 제어 + UDP 송수신 + 콘솔 REPL
+Common/       서버·클라이언트가 공유하는 프로토콜, 소켓 RAII 래퍼, 타이머, 설정 로더
+Server/       TCP 제어 + UDP 물리 시뮬레이션/브로드캐스트 콘솔 앱
+ClientCore/   클라이언트 네트워킹 로직 (정적 라이브러리) - 콘솔/GUI가 공유
+Client/       ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명령 파싱/출력)
 ```
 
 | 위치 | 파일 | 역할 |
@@ -32,11 +33,12 @@ Client/     TCP 제어 + UDP 송수신 + 콘솔 REPL
 | Server | `TcpControlServer.h` / `.cpp` | TCP 연결 수락, 명령 처리, Spawn/Despawn 브로드캐스트 |
 | Server | `UdpStreamingService.h` / `.cpp` | 60Hz 틱: 물리 계산 + EntityState 브로드캐스트 |
 | Server | `UdpControlInputReceiver.h` / `.cpp` | 클라이언트의 조종 입력(UDP) 수신 |
-| Client | `Main.cpp` | 진입점 + 대화형 REPL |
-| Client | `UdpReceiver.h` / `.cpp` | EntityState 수신 + 조종 입력 송신 |
-| Client | `MetricsCollector.h` / `.cpp` | 수신 품질 통계 (유실/역전/간격/지연) |
-| Client | `EntityWorld.h` / `.cpp` | 서버가 알려준 엔티티들의 최신 상태 맵 |
-| Client | `TcpMessageReceiver.h` / `.cpp` | TCP로 오는 Spawn/Despawn을 받는 백그라운드 스레드 |
+| ClientCore | `GameClient.h` / `.cpp` | 콘솔/GUI 공용 파사드 — TCP 접속+핸드셰이크, 명령 전송, 엔티티/통계 조회를 캡슐화 (콘솔 I/O 없음) |
+| ClientCore | `UdpReceiver.h` / `.cpp` | EntityState 수신 + 조종 입력 송신 |
+| ClientCore | `MetricsCollector.h` / `.cpp` | 수신 품질 통계 (유실/역전/간격/지연) |
+| ClientCore | `EntityWorld.h` / `.cpp` | 서버가 알려준 엔티티들의 최신 상태 맵 |
+| ClientCore | `TcpMessageReceiver.h` / `.cpp` | TCP로 오는 Spawn/Despawn을 받는 백그라운드 스레드 |
+| Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
 
 ## 아키텍처 개요
 
@@ -157,4 +159,6 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 
 ## 다음 단계 (미착수)
 
-Client 로직(`UdpReceiver`, `EntityWorld`, `TcpMessageReceiver`, 조종 입력 전송)을 정적 라이브러리로 분리 → C++/CLI Wrapper(.dll) → C# WPF GUI. 지금 콘솔 REPL의 `thrust`/`yaw`/`entities`를 GUI 조종 UI + 2D 화면으로 대체할 예정.
+`ClientCore` 정적 라이브러리 분리는 완료. 다음은:
+1. **C++/CLI Wrapper** (`ClientCore.Managed.dll`, `/clr`) — `ref class ManagedGameClient`가 네이티브 `GameClient*`를 pimpl로 감싸고, `EntityInfo`/`MetricsSnapshot`을 대응하는 managed POCO로 변환. 이벤트 없이 폴링 방식(WPF가 타이머로 `GetEntities()`/`GetMetrics()` 호출). 상호운용 단순화를 위해 .NET Framework(예 4.8) 타깃 권장.
+2. **C# WPF 앱** — MVVM. Throttle/Yaw는 슬라이더(키보드 실시간 홀드 아님, 드래그해서 값 설정), 2D 화면은 카메라가 헬기를 따라가지 않는 고정 전체 맵 뷰(월드 좌표를 캔버스에 고정 배율로 매핑, 경계 벗어나면 clamp). `DispatcherTimer`로 주기적으로 갱신.
