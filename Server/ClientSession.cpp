@@ -169,21 +169,19 @@ namespace Server {
 		positionY_ += velocityY_ * dt;
 	}
 
-	Common::EntityStatePayload ClientSession::BuildEntityStatePayload(uint64_t sequenceId, uint64_t timestampMicroseconds) const
+	Common::EntityStateEntry ClientSession::BuildEntityStateEntry() const
 	{
 		std::lock_guard<std::mutex> lock(entityMutex_);
 
-		Common::EntityStatePayload payload;
-		payload.SequenceId = sequenceId;
-		payload.Timestamp = timestampMicroseconds;
-		payload.EntityId = GetEntityId();
-		payload.PositionX = positionX_;
-		payload.PositionY = positionY_;
-		payload.Heading = heading_;
-		payload.VelocityX = velocityX_;
-		payload.VelocityY = velocityY_;
+		Common::EntityStateEntry entry;
+		entry.EntityId = GetEntityId();
+		entry.PositionX = positionX_;
+		entry.PositionY = positionY_;
+		entry.Heading = heading_;
+		entry.VelocityX = velocityX_;
+		entry.VelocityY = velocityY_;
 
-		return payload;
+		return entry;
 	}
 
 	Common::EntitySpawnPayload ClientSession::BuildEntitySpawnPayload() const

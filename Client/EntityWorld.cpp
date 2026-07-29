@@ -25,18 +25,18 @@ namespace Client {
 		entities_.erase(payload.EntityId);
 	}
 
-	void EntityWorld::OnState(const Common::EntityStatePayload& payload)
+	void EntityWorld::OnState(const Common::EntityStateEntry& entry)
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
 
 		// 없으면 새로 생성 (Spawn을 놓친 경우에도 최소한 State는 보이게)
-		EntityInfo& info = entities_[payload.EntityId];
-		info.EntityId = payload.EntityId;
-		info.PositionX = payload.PositionX;
-		info.PositionY = payload.PositionY;
-		info.Heading = payload.Heading;
-		info.VelocityX = payload.VelocityX;
-		info.VelocityY = payload.VelocityY;
+		EntityInfo& info = entities_[entry.EntityId];
+		info.EntityId = entry.EntityId;
+		info.PositionX = entry.PositionX;
+		info.PositionY = entry.PositionY;
+		info.Heading = entry.Heading;
+		info.VelocityX = entry.VelocityX;
+		info.VelocityY = entry.VelocityY;
 	}
 
 	bool EntityWorld::TryGetMyEntityId(uint32_t& entityId) const

@@ -53,7 +53,8 @@ namespace Client {
 	{
 		while (isRunning_)
 		{
-			uint8_t buffer[64]{};
+			// 한 패킷에 여러 엔티티가 묶여 오므로 넉넉하게 잡음 (엔티티당 24바이트 기준 60개 이상 여유)
+			uint8_t buffer[2048]{};
 			Common::Ipv4Endpoint sender;
 			const int received = udpSocket_.ReceiveFrom(buffer, sizeof(buffer), sender);
 
@@ -68,13 +69,16 @@ namespace Client {
 				continue;
 			}
 
-			Common::EntityStatePayload payload;
-			if (!Common::TryDeserializeEntityState(reader, payload)) {
+			Common::EntityStateBatchPayload batch;
+			if (!Common::TryDeserializeEntityStateBatch(reader, batch)) {
 				continue;
 			}
 
-			metricsCollector_.OnPacketReceived(payload.SequenceId, payload.Timestamp);
-			entityWorld_.OnState(payload);
+			metricsCollector_.OnPacketReceived(batch.SequenceId, batch.Timestamp);
+
+			for (const auto& entry : batch.Entities) {
+				entityWorld_.OnState(entry);
+			}
 		}
 	}
 

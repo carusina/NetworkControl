@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace Server {
 
@@ -71,9 +72,22 @@ namespace Server {
 				}
 			}
 
+			// 2) 이번 틱에 브로드캐스트할 엔티티 상태를 한 번만 모음 (수신자마다 같은 값이라 다시 안 만듦)
+			std::vector<Common::EntityStateEntry> entries;
+			for (const auto& session : sessions)
+			{
+				if (session->GetState() == Common::SessionState::Playing) {
+					entries.push_back(session->BuildEntityStateEntry());
+				}
+			}
+
+			if (entries.empty()) {
+				continue;
+			}
+
 			const uint64_t timestamp = Common::HighResolutionTimer::GetMicroseconds();
 
-			// 2) Playing 상태인 각 수신자에게, Playing 상태인 모든 엔티티의 상태를 전송(엔티티당 패킷 1개)
+			// 3) Playing 상태인 각 수신자에게 모든 엔티티 상태를 담은 패킷 하나만 전송(수신자당 패킷 1개)
 			for (const auto& recipient : sessions)
 			{
 				if (recipient->GetState() != Common::SessionState::Playing) {
@@ -96,25 +110,20 @@ namespace Server {
 					continue;
 				}
 
-				for (const auto& entitySession : sessions)
-				{
-					if (entitySession->GetState() != Common::SessionState::Playing) {
-						continue;
-					}
+				Common::EntityStateBatchPayload batch;
+				batch.SequenceId = recipient->GetNextSequenceId();
+				batch.Timestamp = timestamp;
+				batch.Entities = entries;
 
-					const Common::EntityStatePayload statePayload =
-						entitySession->BuildEntityStatePayload(recipient->GetNextSequenceId(), timestamp);
+				Common::BinaryWriter writer;
+				Common::SerializeHeader(writer, Common::MessageType::EntityState);
+				Common::SerializeEntityStateBatch(writer, batch);
 
-					Common::BinaryWriter writer;
-					Common::SerializeHeader(writer, Common::MessageType::EntityState);
-					Common::SerializeEntityState(writer, statePayload);
+				const auto& data = writer.Data();
+				const int sent = udpSocket_.SendTo(data.data(), static_cast<int>(data.size()), endpoint);
 
-					const auto& data = writer.Data();
-					const int sent = udpSocket_.SendTo(data.data(), static_cast<int>(data.size()), endpoint);
-
-					if (sent != static_cast<int>(data.size())) {
-						std::cerr << "[Session " << recipient->GetSessionId() << "] UDP send failed: " << Common::UdpSocket::GetLastError() << std::endl;
-					}
+				if (sent != static_cast<int>(data.size())) {
+					std::cerr << "[Session " << recipient->GetSessionId() << "] UDP send failed: " << Common::UdpSocket::GetLastError() << std::endl;
 				}
 			}
 		}

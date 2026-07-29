@@ -48,26 +48,57 @@ namespace Common {
             && reader.TryReadFloat(payload.Yaw);
     }
 
-    void SerializeEntityState(BinaryWriter& writer, const EntityStatePayload& payload) {
-        writer.WriteUInt64(payload.SequenceId);
-        writer.WriteUInt64(payload.Timestamp);
-        writer.WriteUInt32(payload.EntityId);
-        writer.WriteFloat(payload.PositionX);
-        writer.WriteFloat(payload.PositionY);
-        writer.WriteFloat(payload.Heading);
-        writer.WriteFloat(payload.VelocityX);
-        writer.WriteFloat(payload.VelocityY);
+    void SerializeEntityStateEntry(BinaryWriter& writer, const EntityStateEntry& entry) {
+        writer.WriteUInt32(entry.EntityId);
+        writer.WriteFloat(entry.PositionX);
+        writer.WriteFloat(entry.PositionY);
+        writer.WriteFloat(entry.Heading);
+        writer.WriteFloat(entry.VelocityX);
+        writer.WriteFloat(entry.VelocityY);
     }
 
-    bool TryDeserializeEntityState(BinaryReader& reader, EntityStatePayload& payload) {
-        return reader.TryReadUInt64(payload.SequenceId)
-            && reader.TryReadUInt64(payload.Timestamp)
-            && reader.TryReadUInt32(payload.EntityId)
-            && reader.TryReadFloat(payload.PositionX)
-            && reader.TryReadFloat(payload.PositionY)
-            && reader.TryReadFloat(payload.Heading)
-            && reader.TryReadFloat(payload.VelocityX)
-            && reader.TryReadFloat(payload.VelocityY);
+    bool TryDeserializeEntityStateEntry(BinaryReader& reader, EntityStateEntry& entry) {
+        return reader.TryReadUInt32(entry.EntityId)
+            && reader.TryReadFloat(entry.PositionX)
+            && reader.TryReadFloat(entry.PositionY)
+            && reader.TryReadFloat(entry.Heading)
+            && reader.TryReadFloat(entry.VelocityX)
+            && reader.TryReadFloat(entry.VelocityY);
+    }
+
+    void SerializeEntityStateBatch(BinaryWriter& writer, const EntityStateBatchPayload& batch) {
+        writer.WriteUInt64(batch.SequenceId);
+        writer.WriteUInt64(batch.Timestamp);
+        writer.WriteUInt16(static_cast<uint16_t>(batch.Entities.size()));
+
+        for (const auto& entry : batch.Entities) {
+            SerializeEntityStateEntry(writer, entry);
+        }
+    }
+
+    bool TryDeserializeEntityStateBatch(BinaryReader& reader, EntityStateBatchPayload& batch) {
+        uint16_t entityCount = 0;
+
+        if (!reader.TryReadUInt64(batch.SequenceId) ||
+            !reader.TryReadUInt64(batch.Timestamp) ||
+            !reader.TryReadUInt16(entityCount))
+        {
+            return false;
+        }
+
+        batch.Entities.clear();
+        batch.Entities.reserve(entityCount);
+
+        for (uint16_t i = 0; i < entityCount; ++i) {
+            EntityStateEntry entry;
+            if (!TryDeserializeEntityStateEntry(reader, entry)) {
+                return false;
+            }
+
+            batch.Entities.push_back(entry);
+        }
+
+        return true;
     }
 
     void SerializeEntitySpawn(BinaryWriter& writer, const EntitySpawnPayload& payload) {

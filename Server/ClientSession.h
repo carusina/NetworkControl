@@ -42,7 +42,8 @@ namespace Server {
 			// 매 틱 물리 갱신 - UdpStreamingService 워커 스레드가 호출
 			void StepPhysics(double deltaSeconds);
 
-			Common::EntityStatePayload BuildEntityStatePayload(uint64_t sequenceId, uint64_t timestampMicroseconds) const;
+			// SequenceId/Timestamp는 안 들어감 - 그건 배치(수신자+틱) 단위라 UdpStreamingService가 따로 채움
+			Common::EntityStateEntry BuildEntityStateEntry() const;
 			Common::EntitySpawnPayload BuildEntitySpawnPayload() const;
 
 			// 서버 종료 또는 연결 해제 시 세션을 정리

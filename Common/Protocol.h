@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 namespace Common {
 
@@ -58,15 +59,23 @@ namespace Common {
         float Yaw = 0.0f;
     };
 
-    struct EntityStatePayload {
-        uint64_t SequenceId = 0;   // 수신자별 UDP 패킷 순번 (유실/역전 통계용)
-        uint64_t Timestamp = 0;    // 서버 기준 생성 시각 (지연 측정용)
+    // 엔티티 하나의 상태 - 배치 안에서 고정 크기로 이어 붙여 보냄
+    struct EntityStateEntry {
         uint32_t EntityId = 0;
         float PositionX = 0.0f;
         float PositionY = 0.0f;
         float Heading = 0.0f;
         float VelocityX = 0.0f;
         float VelocityY = 0.0f;
+    };
+
+    // 한 틱에 한 수신자에게 보내는 모든 엔티티 상태를 묶은 패킷.
+    // SequenceId/Timestamp는 패킷(수신자+틱) 단위로 한 번만 있음 - 엔티티마다 반복해서
+    // 넣으면 패킷 하나 유실될 때 마치 엔티티 수만큼 유실된 것처럼 통계가 부풀려지기 때문
+    struct EntityStateBatchPayload {
+        uint64_t SequenceId = 0;   // 수신자별 UDP 패킷 순번 (유실/역전 통계용)
+        uint64_t Timestamp = 0;    // 서버 기준 생성 시각 (지연 측정용)
+        std::vector<EntityStateEntry> Entities;
     };
 
     struct EntitySpawnPayload {
@@ -88,7 +97,7 @@ namespace Common {
     constexpr size_t RegisterUdpPortPayloadSize = sizeof(uint16_t);
     constexpr size_t SetRatePayloadSize = sizeof(uint32_t);
     constexpr size_t EntityControlInputPayloadSize = sizeof(uint32_t) * 2 + sizeof(float) * 2;
-    constexpr size_t EntityStatePayloadSize = sizeof(uint64_t) * 2 + sizeof(uint32_t) + sizeof(float) * 5;
+    constexpr size_t EntityStateEntrySize = sizeof(uint32_t) + sizeof(float) * 5;
     constexpr size_t EntitySpawnPayloadSize = sizeof(uint32_t) + sizeof(uint8_t) + sizeof(float) * 3;
     constexpr size_t EntityDespawnPayloadSize = sizeof(uint32_t);
 
@@ -104,8 +113,12 @@ namespace Common {
     void SerializeEntityControlInput(BinaryWriter& writer, const EntityControlInputPayload& payload);
     bool TryDeserializeEntityControlInput(BinaryReader& reader, EntityControlInputPayload& payload);
 
-    void SerializeEntityState(BinaryWriter& writer, const EntityStatePayload& payload);
-    bool TryDeserializeEntityState(BinaryReader& reader, EntityStatePayload& payload);
+    void SerializeEntityStateEntry(BinaryWriter& writer, const EntityStateEntry& entry);
+    bool TryDeserializeEntityStateEntry(BinaryReader& reader, EntityStateEntry& entry);
+
+    // 엔티티 개수(uint16) + SerializeEntityStateEntry를 그만큼 이어 붙임
+    void SerializeEntityStateBatch(BinaryWriter& writer, const EntityStateBatchPayload& batch);
+    bool TryDeserializeEntityStateBatch(BinaryReader& reader, EntityStateBatchPayload& batch);
 
     void SerializeEntitySpawn(BinaryWriter& writer, const EntitySpawnPayload& payload);
     bool TryDeserializeEntitySpawn(BinaryReader& reader, EntitySpawnPayload& payload);

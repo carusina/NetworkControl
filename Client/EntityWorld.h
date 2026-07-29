@@ -24,7 +24,7 @@ namespace Client {
 		public:
 			void OnSpawn(const Common::EntitySpawnPayload& payload);
 			void OnDespawn(const Common::EntityDespawnPayload& payload);
-			void OnState(const Common::EntityStatePayload& payload);
+			void OnState(const Common::EntityStateEntry& entry);
 
 			// 접속 후 가장 먼저 받은 Spawn의 EntityId = 내 엔티티 (콘솔 표시용)
 			bool TryGetMyEntityId(uint32_t& entityId) const;

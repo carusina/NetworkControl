@@ -79,11 +79,13 @@ enum class MessageType : uint8_t {
 | `Play` / `Pause` / `Stop` / `Reset` | TCP | C→S | 없음 (헤더만) |
 | `SetRate` | TCP | C→S | `DataRateHz` (uint32, 30 또는 60) |
 | `EntityControlInput` | UDP | C→S | `EntityId`, `SequenceId`, `Throttle`, `Yaw` (float, -1.0~1.0) |
-| `EntityState` | UDP | S→C | `SequenceId`, `Timestamp`, `EntityId`, `PositionX/Y`, `Heading`, `VelocityX/Y` |
+| `EntityState` | UDP | S→C | `SequenceId`, `Timestamp` (배치 전체에 1개씩) + `EntityCount`(uint16) + `EntityStateEntry`(`EntityId`, `PositionX/Y`, `Heading`, `VelocityX/Y`) × N개 |
 | `EntitySpawn` | TCP | S→C | `EntityId`, `Type`, `PositionX/Y`, `Heading` |
 | `EntityDespawn` | TCP | S→C | `EntityId` |
 
 `RegisterUdpPortPayloadSize` 같은 상수(`Protocol.h`)가 각 Payload의 정확한 바이트 수를 정의한다 — 수신 측이 헤더 다음에 몇 바이트를 더 읽어야 하는지 알아야 하므로, 이 상수를 절대 struct의 `sizeof`로 대체하면 안 된다(패딩 때문에 실제 전송 크기와 달라질 수 있음).
+
+**`EntityState`는 배치로 묶여 있다** — 수신자 1명당, 그 틱에 Playing인 엔티티 전부를 패킷 하나에 담아 보낸다(`EntityStateEntry`가 24바이트 고정 크기라, 개수만 알면 몇 바이트씩 잘라 읽을지 명확해서 별도 구분자가 필요 없음). 원래는 엔티티마다 패킷을 하나씩 따로 보냈는데, 엔티티 10명·수신자 10명이면 틱당 100개 패킷이 나가는 구조라 수신자당 1개로 묶었다. `SequenceId`/`Timestamp`는 엔티티마다 있는 게 아니라 **패킷(배치) 하나당 1개**다 — 엔티티마다 따로 있으면, 패킷 하나가 유실됐을 때 마치 엔티티 수만큼 유실된 것처럼 통계가 부풀려지기 때문.
 
 ## 메시지 흐름 (접속부터 종료까지)
 
@@ -91,7 +93,7 @@ enum class MessageType : uint8_t {
 2. **Spawn 캐치업**: 등록 성공 시 서버가 (a) 새 클라이언트에게 **자기 자신의 EntitySpawn을 가장 먼저** 보냄 — 클라이언트는 "접속 후 처음 받은 Spawn = 내 EntityId"로 인식(`EntityWorld::TryGetMyEntityId`). (b) 이미 있던 다른 세션들의 Spawn도 전달(늦게 접속해도 기존 참가자가 보이도록). (c) 새 세션의 Spawn을 다른 모든 기존 세션에 브로드캐스트.
 3. **Play**: 클라이언트가 `play`를 보내면 그 세션의 `SessionState`가 `Playing`이 됨. Playing인 엔티티만 물리 시뮬레이션이 돌고 브로드캐스트를 주고받는다.
 4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 자신의 `EntityId`(첫 Spawn으로 알게 된 값) + 보낼 때마다 증가하는 `SequenceId`를 함께 실어 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 `SessionManager::GetSession(EntityId)`로 바로 세션을 조회하고(O(1), 전체 세션을 순회하지 않음), 발신 IP:포트가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지만 확인(다른 세션 사칭 방지). `ClientSession::ApplyControlInput`은 `SequenceId`가 마지막으로 적용한 값보다 새로울 때만 반영해서, UDP 역전으로 오래된 입력이 늦게 도착해 최신 입력을 덮어쓰는 걸 막는다.
-5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 각 수신자에게, Playing 상태인 모든 엔티티(자기 자신 포함)의 `EntityState`를 하나씩 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
+5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 엔티티들의 상태를 한 번만 모아둠 → (c) Playing 상태인 각 수신자에게, 모아둔 엔티티 상태 전부(자기 자신 포함)를 담은 `EntityState` 배치 패킷 1개를 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
 6. **연결 종료**: 클라이언트가 `quit`하거나 연결이 끊기면, 서버가 그 세션의 `EntityDespawn`을 남은 모든 세션에 브로드캐스트하고 세션을 제거.
 
 ## 물리 모델 (`ClientSession::StepPhysics`)
@@ -147,8 +149,8 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 - **지연(latency) 측정은 같은 컴퓨터에서 실행할 때만 유효** — `Timestamp`는 `steady_clock` 기반이라 서로 다른 물리 PC끼리는 시계 기준이 달라 값이 의미 없어짐 (진짜 크로스 머신 지연을 재려면 NTP 비슷한 시계 동기화가 별도로 필요, 아직 미구현).
 - **`missingSequenceIds_`(유실 판정 집합)** 는 `MissingSequenceWindow`(1000개, 60Hz 기준 약 16초)보다 오래된 항목을 `confirmedLostCount_`로 흡수해서 무한정 커지지 않게 함.
 - **물리에 drag 없음** — 위 "물리 모델" 참고.
-- **EntityState는 엔티티당 패킷 1개** (배치 안 함) — 접속자가 많아지면 틱당 송신 패킷 수가 O(수신자 × 엔티티)로 늘어남. 소규모 인원 기준으로는 문제없음.
-- **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 발신 IP:포트로 세션을 역매칭하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
+- **EntityState 배치에 개수 상한이 없음** — 수신자당 패킷 1개로 묶긴 하지만, 엔티티 수가 아주 많아지면(대략 60개 이상) 패킷이 UDP 단편화(fragmentation) 없이 안전한 크기(~1400바이트)를 넘어설 수 있음. 소규모 인원 기준으론 문제없고, 나중에 필요하면 "한 패킷에 최대 N개까지만 담고 넘치면 나눠 보낸다" 정도만 추가하면 됨.
+- **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 `EntityId`로 세션을 조회한 뒤 발신 IP:포트가 그 세션의 등록된 UDP 엔드포인트와 일치하는지 확인하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
 
 ## 다음 단계 (미착수)
 
