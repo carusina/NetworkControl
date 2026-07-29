@@ -100,12 +100,16 @@ enum class MessageType : uint8_t {
 
 ```cpp
 heading += yaw * YawRateMax(2 rad/s) * dt
-speed = clamp(speed + throttle * Accel(20/s²) * dt, -MaxSpeed(50), MaxSpeed(50))
+speed += throttle * Accel(20/s²) * dt
+speed *= clamp(1 - DragPerSecond(1.0) * dt, 0, 1)   // 감속 - throttle 0이면 서서히 정지
+speed = clamp(speed, -MaxSpeed(50), MaxSpeed(50))
 velocityX = cos(heading) * speed;  velocityY = sin(heading) * speed
 positionX += velocityX * dt;       positionY += velocityY * dt
 ```
 
-지금은 **감속(drag) 항이 없다** — `thrust 0`을 보내도 속도가 0으로 줄지 않고 그 속도 그대로 유지된다(관성 비행). 나중에 `speed *= (1 - dragCoefficient * dt)` 한 줄만 추가하면 자연 감속을 넣을 수 있다.
+`DragPerSecond`(현재 1.0)가 클수록 빨리 감속한다 — `thrust 0`을 주면 관성으로 계속 미끄러지지 않고 대략 1초 시간상수로 속도가 줄어든다.
+
+**CPU 지연으로 틱이 밀려도 시뮬레이션 시간이 뒤처지지 않는다** — `TimerCompensator::WaitForNextTick()`은 예정된 틱을 지나쳤으면 그만큼(`elapsedTicks`)을 반환하고, `UdpStreamingService::Worker`는 그 값만큼 `StepPhysics`를 반복 호출한다. 이렇게 안 하면 건너뛴 틱의 시간이 그냥 사라져서, CPU 지연이 반복될수록 시뮬레이션 시계가 실시간보다 계속 뒤처지게 된다.
 
 ## 클라이언트 REPL 명령어
 
@@ -148,7 +152,6 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 
 - **지연(latency) 측정은 같은 컴퓨터에서 실행할 때만 유효** — `Timestamp`는 `steady_clock` 기반이라 서로 다른 물리 PC끼리는 시계 기준이 달라 값이 의미 없어짐 (진짜 크로스 머신 지연을 재려면 NTP 비슷한 시계 동기화가 별도로 필요, 아직 미구현).
 - **`missingSequenceIds_`(유실 판정 집합)** 는 `MissingSequenceWindow`(1000개, 60Hz 기준 약 16초)보다 오래된 항목을 `confirmedLostCount_`로 흡수해서 무한정 커지지 않게 함.
-- **물리에 drag 없음** — 위 "물리 모델" 참고.
 - **EntityState 배치에 개수 상한이 없음** — 수신자당 패킷 1개로 묶긴 하지만, 엔티티 수가 아주 많아지면(대략 60개 이상) 패킷이 UDP 단편화(fragmentation) 없이 안전한 크기(~1400바이트)를 넘어설 수 있음. 소규모 인원 기준으론 문제없고, 나중에 필요하면 "한 패킷에 최대 N개까지만 담고 넘치면 나눠 보낸다" 정도만 추가하면 됨.
 - **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 `EntityId`로 세션을 조회한 뒤 발신 IP:포트가 그 세션의 등록된 UDP 엔드포인트와 일치하는지 확인하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
 

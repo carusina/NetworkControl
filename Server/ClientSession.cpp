@@ -12,6 +12,9 @@ namespace Server {
 		constexpr float AccelerationUnitsPerSecondSquared = 20.0f;
 		constexpr float MaxSpeedUnitsPerSecond = 50.0f;
 
+		// 클수록 빨리 감속 (1.0 ≈ throttle 0일 때 정지까지 걸리는 시간상수가 대략 1초)
+		constexpr float DragPerSecond = 1.0f;
+
 		// std::clamp(C++17) 대신 - 이 프로젝트가 그보다 이전 표준으로 컴파일됨
 		float Clamp(float value, float minValue, float maxValue) {
 			if (value < minValue) return minValue;
@@ -160,6 +163,10 @@ namespace Server {
 		heading_ += yaw_ * YawRateMaxRadiansPerSecond * dt;
 
 		speed_ += throttle_ * AccelerationUnitsPerSecondSquared * dt;
+
+		// 감속 - throttle을 0으로 줘도 관성으로 계속 미끄러지지 않고 서서히 멈추게 함
+		speed_ *= Clamp(1.0f - DragPerSecond * dt, 0.0f, 1.0f);
+
 		speed_ = Clamp(speed_, -MaxSpeedUnitsPerSecond, MaxSpeedUnitsPerSecond);
 
 		velocityX_ = std::cos(heading_) * speed_;

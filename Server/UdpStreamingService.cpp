@@ -59,16 +59,20 @@ namespace Server {
 
 		while (isRunning_)
 		{
-			timer.WaitForNextTick();
-			++tickCount;
+			// CPU 지연으로 예정된 틱을 지나쳤으면 elapsedTicks가 1보다 커짐 - 그만큼 물리를 진행시켜야
+			// 시뮬레이션 시간이 실시간보다 뒤처지지 않음(건너뛴 시간을 그냥 버리지 않음)
+			const uint64_t elapsedTicks = timer.WaitForNextTick();
+			tickCount += elapsedTicks;
 
 			const auto sessions = sessionManager_.GetSessionsSnapshot();
 
-			// 1) Playing 상태인 모든 엔티티의 물리를 한 틱 진행
+			// 1) Playing 상태인 모든 엔티티의 물리를 밀린 틱 수만큼 진행
 			for (const auto& session : sessions)
 			{
 				if (session->GetState() == Common::SessionState::Playing) {
-					session->StepPhysics(FixedDeltaSeconds);
+					for (uint64_t i = 0; i < elapsedTicks; ++i) {
+						session->StepPhysics(FixedDeltaSeconds);
+					}
 				}
 			}
 

@@ -29,8 +29,11 @@ namespace Common {
                 tickCount_ = 0;
             }
 
-            void WaitForNextTick() {
+            // 반환값: 이번 호출에서 실제로 지나간 틱 수 (보통 1, CPU 지연으로 밀렸으면 그 이상)
+            // 호출부가 밀린 틱만큼 시뮬레이션을 따로 진행시켜야 실시간과 어긋나지 않음
+            uint64_t WaitForNextTick() {
                 const HighResolutionTimer::TimePoint now = HighResolutionTimer::Now();
+                const uint64_t previousTickCount = tickCount_;
 
                 HighResolutionTimer::TimePoint nextTick;
                 do {
@@ -39,6 +42,8 @@ namespace Common {
                 } while(nextTick <= now);
 
                 std::this_thread::sleep_until(nextTick);
+
+                return tickCount_ - previousTickCount;
             }
 
             DataRate GetDataRate() const {
