@@ -21,35 +21,40 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{73C182D6-C415-4A08-9CB3-6583061A0A0C}</ProjectGuid>
-    <RootNamespace>ClientCore</RootNamespace>
+    <ProjectGuid>{033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD}</ProjectGuid>
+    <RootNamespace>ClientCoreManaged</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- vcpkg 전역 통합이 켜져 있으면 무관한 설치 패키지의 lib 경로가 새 프로젝트에도 끼어들 수 있어 꺼둠 -->
+    <VcpkgEnabled>false</VcpkgEnabled>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
+    <CLRSupport>true</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CLRSupport>true</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
+    <CLRSupport>true</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CLRSupport>true</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -73,74 +78,54 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <!-- C++/CLI(Managed Wrapper)가 이 lib를 링크하므로 동적 CRT로 고정 (/clr은 정적 CRT와 호환 안 됨) -->
+      <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="EntityWorld.h" />
-    <ClInclude Include="GameClient.h" />
-    <ClInclude Include="MetricsCollector.h" />
-    <ClInclude Include="TcpMessageReceiver.h" />
-    <ClInclude Include="UdpReceiver.h" />
-    <ClInclude Include="..\Common\BinarySerializer.h" />
-    <ClInclude Include="..\Common\ByteOrder.h" />
-    <ClInclude Include="..\Common\Config.h" />
-    <ClInclude Include="..\Common\HighResolutionTimer.h" />
-    <ClInclude Include="..\Common\Ipv4Endpoint.h" />
-    <ClInclude Include="..\Common\Protocol.h" />
-    <ClInclude Include="..\Common\SocketRuntime.h" />
-    <ClInclude Include="..\Common\TcpSocket.h" />
-    <ClInclude Include="..\Common\TimerCompensator.h" />
-    <ClInclude Include="..\Common\UdpSocket.h" />
+    <ClInclude Include="ManagedGameClient.h" />
+    <ClInclude Include="ManagedTypes.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="EntityWorld.cpp" />
-    <ClCompile Include="GameClient.cpp" />
-    <ClCompile Include="MetricsCollector.cpp" />
-    <ClCompile Include="TcpMessageReceiver.cpp" />
-    <ClCompile Include="UdpReceiver.cpp" />
-    <ClCompile Include="..\Common\BinarySerializer.cpp" />
-    <ClCompile Include="..\Common\Config.cpp" />
-    <ClCompile Include="..\Common\Ipv4Endpoint.cpp" />
-    <ClCompile Include="..\Common\Protocol.cpp" />
-    <ClCompile Include="..\Common\SocketRuntime.cpp" />
-    <ClCompile Include="..\Common\TcpSocket.cpp" />
-    <ClCompile Include="..\Common\UdpSocket.cpp" />
+    <ClCompile Include="ManagedGameClient.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ClientCore\ClientCore.vcxproj">
+      <Project>{73C182D6-C415-4A08-9CB3-6583061A0A0C}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -1,20 +1,22 @@
 # NetworkControl
 
-TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 구현했고, 지금은 Client 네트워킹 로직을 재사용 가능한 라이브러리(`ClientCore`)로 뽑아낸 상태 — 다음은 이 위에 C++/CLI Wrapper(.dll) → C# WPF GUI를 얹는 단계.
+TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 구현했고, Client 네트워킹 로직을 재사용 가능한 라이브러리(`ClientCore`)로 뽑아낸 뒤 C++/CLI Wrapper(`ClientCore.Managed`)까지 만든 상태 — 다음은 이 위에 C# WPF GUI를 얹는 단계.
 
 ## 기술 스택 / 빌드 환경
 
 - Windows, Visual Studio 2022 (v143 toolset), C++17 이전 표준(`std::clamp` 등 C++17 전용 stdlib 함수는 못 씀 — 프로젝트 표준을 올리지 않고 직접 만든 헬퍼로 대체하는 관례)
 - 순수 Winsock2 기반, 외부 라이브러리 의존성 없음 (JSON/vcpkg 패키지 미사용)
-- 솔루션 2개: `Server/Server.sln`, `Client/Client.sln`(+ `ClientCore.vcxproj`를 프로젝트 참조로 포함). `Common/` 소스는 각 최상위 프로젝트(`Server`, `ClientCore`)가 직접 컴파일 목록에 포함해서 링크한다 — **Common에 파일을 추가하면 `Server.vcxproj`와 `ClientCore.vcxproj` 양쪽에 수동으로 `ClCompile`/`ClInclude` 항목을 추가해야 한다** (자동으로 안 잡힘, 이 프로젝트에서 반복적으로 겪은 이슈).
+- 솔루션 2개: `Server/Server.sln`, `Client/Client.sln`(+ `ClientCore.vcxproj`, `ClientCore.Managed.vcxproj`를 프로젝트 참조로 포함). `Common/` 소스는 각 최상위 프로젝트(`Server`, `ClientCore`)가 직접 컴파일 목록에 포함해서 링크한다 — **Common에 파일을 추가하면 `Server.vcxproj`와 `ClientCore.vcxproj` 양쪽에 수동으로 `ClCompile`/`ClInclude` 항목을 추가해야 한다** (자동으로 안 잡힘, 이 프로젝트에서 반복적으로 겪은 이슈).
+- `ClientCore`는 `ClientCore.Managed`(C++/CLI, `/clr`)에서도 링크되므로 **동적 CRT(`MultiThreadedDLL`/`MultiThreadedDebugDLL`)로 명시적으로 고정**되어 있다 (`/clr`은 정적 CRT와 호환 안 됨) — `Client.vcxproj`도 링크 대상과 맞추기 위해 동일하게 맞춰둠.
 
 ## 프로젝트 구조
 
 ```
-Common/       서버·클라이언트가 공유하는 프로토콜, 소켓 RAII 래퍼, 타이머, 설정 로더
-Server/       TCP 제어 + UDP 물리 시뮬레이션/브로드캐스트 콘솔 앱
-ClientCore/   클라이언트 네트워킹 로직 (정적 라이브러리) - 콘솔/GUI가 공유
-Client/       ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명령 파싱/출력)
+Common/               서버·클라이언트가 공유하는 프로토콜, 소켓 RAII 래퍼, 타이머, 설정 로더
+Server/               TCP 제어 + UDP 물리 시뮬레이션/브로드캐스트 콘솔 앱
+ClientCore/           클라이언트 네트워킹 로직 (정적 라이브러리) - 콘솔/GUI가 공유
+ClientCore.Managed/   C++/CLI wrapper (.dll) - GameClient를 C#에서 쓸 수 있게 감쌈
+Client/               ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명령 파싱/출력)
 ```
 
 | 위치 | 파일 | 역할 |
@@ -38,6 +40,8 @@ Client/       ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명령 파�
 | ClientCore | `MetricsCollector.h` / `.cpp` | 수신 품질 통계 (유실/역전/간격/지연) |
 | ClientCore | `EntityWorld.h` / `.cpp` | 서버가 알려준 엔티티들의 최신 상태 맵 |
 | ClientCore | `TcpMessageReceiver.h` / `.cpp` | TCP로 오는 Spawn/Despawn을 받는 백그라운드 스레드 |
+| ClientCore.Managed | `ManagedGameClient.h` / `.cpp` | `GameClient`를 감싼 `ref class` — `String^`↔`std::string` 등 타입 변환, `IDisposable`(`~T`/`!T`) 패턴 |
+| ClientCore.Managed | `ManagedTypes.h` | `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 구조체를 그대로 옮긴 C# 바인딩용 POCO |
 | Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
 
 ## 아키텍처 개요
@@ -157,8 +161,79 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 - **EntityState 배치에 개수 상한이 없음** — 수신자당 패킷 1개로 묶긴 하지만, 엔티티 수가 아주 많아지면(대략 60개 이상) 패킷이 UDP 단편화(fragmentation) 없이 안전한 크기(~1400바이트)를 넘어설 수 있음. 소규모 인원 기준으론 문제없고, 나중에 필요하면 "한 패킷에 최대 N개까지만 담고 넘치면 나눠 보낸다" 정도만 추가하면 됨.
 - **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 `EntityId`로 세션을 조회한 뒤 발신 IP:포트가 그 세션의 등록된 UDP 엔드포인트와 일치하는지 확인하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
 
-## 다음 단계 (미착수)
+## C++/CLI Wrapper (`ClientCore.Managed`)
 
-`ClientCore` 정적 라이브러리 분리는 완료. 다음은:
-1. **C++/CLI Wrapper** (`ClientCore.Managed.dll`, `/clr`) — `ref class ManagedGameClient`가 네이티브 `GameClient*`를 pimpl로 감싸고, `EntityInfo`/`MetricsSnapshot`을 대응하는 managed POCO로 변환. 이벤트 없이 폴링 방식(WPF가 타이머로 `GetEntities()`/`GetMetrics()` 호출). 상호운용 단순화를 위해 .NET Framework(예 4.8) 타깃 권장.
-2. **C# WPF 앱** — MVVM. Throttle/Yaw는 슬라이더(키보드 실시간 홀드 아님, 드래그해서 값 설정), 2D 화면은 카메라가 헬기를 따라가지 않는 고정 전체 맵 뷰(월드 좌표를 캔버스에 고정 배율로 매핑, 경계 벗어나면 clamp). `DispatcherTimer`로 주기적으로 갱신.
+### 왜 필요한가
+
+WPF는 C#(.NET) 세계에서 돌고, `ClientCore.lib`는 순수 네이티브 C++이라 WPF가 직접 호출할 수 없다. **C++/CLI**는 네이티브 C++과 .NET을 한 파일 안에 같이 쓸 수 있는 특수한 C++ 방언이라, 이 둘을 잇는 "다리" 역할의 DLL을 만드는 데 쓴다. 하는 일은 로직을 새로 짜는 게 아니라, `Client::GameClient`(네이티브)를 C#이 이해할 수 있는 타입으로 그대로 감싸서 다시 내보내는 것뿐이다.
+
+### 프로젝트 설정
+
+`ClientCore.Managed.vcxproj`는 다른 프로젝트들과 성격이 다르다.
+- `<ConfigurationType>DynamicLibrary</ConfigurationType>` — `.dll` 하나를 만듦
+- `<CLRSupport>true</CLRSupport>` — `/clr` 컴파일러 스위치 (이 프로젝트 소스에서 네이티브 코드와 매니지드 코드를 같이 쓸 수 있게 함)
+- `<TargetFrameworkVersion>v4.8</TargetFrameworkVersion>` — .NET Framework 4.8 타깃 (최신 .NET Core/5+ 보다 C++/CLI와 상호운용이 훨씬 무난함)
+- `ClientCore.vcxproj`를 프로젝트 참조로 추가 (네이티브 `GameClient`에 접근하기 위해)
+
+### 코드 구조
+
+**`ManagedTypes.h`** — 네이티브 구조체를 그대로 옮긴 값 전달용 POCO(Plain Old CLR Object).
+```cpp
+public ref class ManagedEntityInfo
+{
+public:
+    property System::UInt32 EntityId;
+    property System::Single PositionX;
+    property System::Single PositionY;
+    property System::Single Heading;
+    property System::Single VelocityX;
+    property System::Single VelocityY;
+};
+```
+`property Type Name;`은 C++/CLI의 auto-property 문법(C#의 자동 구현 속성과 동일). `ManagedMetricsSnapshot`도 같은 방식으로 `Client::MetricsSnapshot`을 그대로 옮김.
+
+**`ManagedGameClient.h`/`.cpp`** — 네이티브 `Client::GameClient*`를 pimpl로 들고 있는 `ref class`.
+```cpp
+public ref class ManagedGameClient
+{
+public:
+    ManagedGameClient();
+    ~ManagedGameClient();   // IDisposable::Dispose - 결정적 해제
+    !ManagedGameClient();   // 파이널라이저 - Dispose를 안 불렀을 때의 안전망
+
+    bool Connect(System::String^ host, int tcpPort, int udpPort, int serverUdpPort);
+    bool Play(); bool Pause(); bool Stop(); bool Reset();
+    bool SetRate30(); bool SetRate60();
+    bool SendControlInput(float throttle, float yaw);
+
+    System::Nullable<System::UInt32> GetMyEntityId();
+    System::Collections::Generic::List<ManagedEntityInfo^>^ GetEntities();
+    ManagedMetricsSnapshot^ GetMetrics();
+
+private:
+    Client::GameClient* native_;
+};
+```
+- **`~T()`/`!T()` 패턴**: `~ManagedGameClient()`(소멸자)가 `.NET`의 `Dispose()`로 컴파일되고, `!ManagedGameClient()`(파이널라이저)가 GC가 못 챙긴 경우의 안전망이 된다. 관례대로 `~T() { this->!T(); }`로 소멸자가 파이널라이저를 호출해서, 어느 경로로 정리되든 네이티브 객체(`delete native_`)가 한 번만 해제되게 한다. 컴파일러가 `IDisposable` 전체 패턴(`SuppressFinalize` 포함)을 자동으로 만들어준다.
+- **폴링 방식, 이벤트 없음**: 서버가 뭘 보낼 때마다 알림을 주는 대신, `GetEntities()`/`GetMetrics()`가 그 순간의 스냅샷을 반환한다. WPF가 타이머로 주기적으로 이 함수들을 불러서 화면을 다시 그리는 구조로 쓸 예정.
+- **타입 변환**: `System::String^ → std::string`은 `msclr::interop::marshal_as<std::string>(host)`로, `std::vector<EntityInfo> → List<ManagedEntityInfo^>^`는 루프 돌면서 `gcnew`로 하나씩 옮겨 담는 식으로 처리.
+
+### 삽질 기록 (다음에 비슷한 걸 만들 때 참고)
+
+**1) 헤더에 `using namespace System;`을 넣으면 안 됨** — 처음에 헤더 맨 위에 편의상 넣어뒀더니 이런 에러가 났다.
+```
+error C3699: '*': cannot use this indirection on type 'IServiceProvider'
+error C2371: 'IServiceProvider': redefinition; different basic types
+```
+Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*` 기반)를 선언하는데, `.NET`에도 이름이 같은 `System::IServiceProvider`(핸들 `^` 기반)가 있다. 헤더에서 `using namespace System;`으로 이름을 열어두면, 나중에 이 헤더를 포함한 파일이 네이티브 COM 헤더를 (직접이든 간접적으로든) 끌어들일 때 컴파일러가 두 `IServiceProvider`를 헷갈려서 충돌한다. **고친 방법**: `using namespace System;`을 아예 안 쓰고, `System::String^`, `System::UInt32`, `System::Nullable<...>`처럼 전부 완전한 이름으로 씀. 헤더 파일에는 특히 `using namespace`를 넣지 않는 게 안전.
+
+**2) `/clr`은 정적 CRT(`/MT`)와 호환 안 됨** — `ClientCore.lib`가 매니지드 DLL에서도 링크되므로, CRT 링크 방식(`RuntimeLibrary`)을 `MultiThreadedDLL`/`MultiThreadedDebugDLL`(동적)으로 양쪽 프로젝트(`ClientCore`, `Client`)에 명시적으로 맞춰야 했다. 안 그러면 CRT 심볼이 중복 정의되거나 링크가 아예 안 맞음.
+
+**3) Winsock이 초기화가 안 됨 + `Ws2_32.lib`가 안 잡힘** — 콘솔 앱은 `main()`에서 `Common::SocketRuntime` 객체를 직접 만들어서 `WSAStartup`을 호출하는데, `ManagedGameClient`는 그런 걸 만든 적이 없었다. 게다가 `Ws2_32.lib` 링크는 `SocketRuntime.cpp` 안의 `#pragma comment(lib, "Ws2_32.lib")`로 되는데, 이 파일의 오브젝트 자체가 링크에 안 끌려 들어가니 그 pragma도 적용이 안 돼서 `__imp_socket`, `__imp_bind` 같은 unresolved external이 무더기로 났다. **고친 방법**: `ManagedGameClient.cpp`에 프로세스당 한 번만 초기화되는 `static Common::SocketRuntime` (Meyer's singleton)을 두고 생성자에서 접근하도록 함 — 이러면 `SocketRuntime.obj`가 링크에 끌려 들어가면서 `Ws2_32.lib` 문제도 같이 해결됨.
+
+**4) 관계없는 `draco.lib`와 링크 충돌** — Google의 3D 압축 라이브러리인 `draco.lib`가 `std::bad_alloc`/`std::exception` 심볼을 우리 프로젝트와 중복 정의한다는 링크 에러가 났다. 이 프로젝트는 draco를 전혀 참조한 적이 없어서, vcpkg 전역 통합(`vcpkg integrate install`)이 이 컴퓨터에 예전에 설치해둔 무관한 패키지의 lib 경로를 새 프로젝트에도 끼워 넣은 것으로 추정됨. `<VcpkgEnabled>false</VcpkgEnabled>`를 vcxproj에 추가해서 이 프로젝트만 vcpkg 전역 통합에서 빼서 해결.
+
+## 다음 단계 (내일 — C# WPF 앱)
+
+- MVVM. Throttle/Yaw는 슬라이더(키보드 실시간 홀드 아님, 드래그해서 값 설정), 2D 화면은 카메라가 헬기를 따라가지 않는 고정 전체 맵 뷰(월드 좌표를 캔버스에 고정 배율로 매핑, 경계 벗어나면 clamp). `DispatcherTimer`로 주기적으로 `GetEntities()`/`GetMetrics()` 호출해서 갱신.
+- 새 WPF 프로젝트가 `ClientCore.Managed.dll`을 참조하고, `ClientCoreManaged::ManagedGameClient` 사용.
