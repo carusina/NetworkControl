@@ -44,27 +44,6 @@ namespace Server {
 		udpSocket_.Close();
 	}
 
-	std::shared_ptr<ClientSession> UdpControlInputReceiver::FindSessionByEndpoint(const Common::Ipv4Endpoint& senderEndpoint) const
-	{
-		const std::string senderIp = senderEndpoint.GetIpAddress();
-		const uint16_t senderPort = senderEndpoint.GetPort();
-
-		for (const auto& session : sessionManager_.GetSessionsSnapshot())
-		{
-			std::string registeredIp;
-			uint16_t registeredPort = 0;
-
-			if (session->TryGetUdpEndpoint(registeredIp, registeredPort) &&
-				registeredIp == senderIp &&
-				registeredPort == senderPort)
-			{
-				return session;
-			}
-		}
-
-		return nullptr;
-	}
-
 	void UdpControlInputReceiver::ReceiveWorker()
 	{
 		while (isRunning_)
@@ -89,10 +68,24 @@ namespace Server {
 				continue;
 			}
 
-			const auto session = FindSessionByEndpoint(sender);
-			if (session) {
-				session->ApplyControlInput(payload.Throttle, payload.Yaw);
+			// EntityId(= SessionId)로 바로 조회 - 세션 전체를 순회하지 않음
+			const auto session = sessionManager_.GetSession(payload.EntityId);
+			if (!session) {
+				continue;
 			}
+
+			// 발신 주소가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지 확인 (다른 세션 사칭 방지)
+			std::string registeredIp;
+			uint16_t registeredPort = 0;
+
+			if (!session->TryGetUdpEndpoint(registeredIp, registeredPort) ||
+				registeredIp != sender.GetIpAddress() ||
+				registeredPort != sender.GetPort())
+			{
+				continue;
+			}
+
+			session->ApplyControlInput(payload.SequenceId, payload.Throttle, payload.Yaw);
 		}
 	}
 

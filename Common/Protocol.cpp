@@ -35,12 +35,16 @@ namespace Common {
     }
 
     void SerializeEntityControlInput(BinaryWriter& writer, const EntityControlInputPayload& payload) {
+        writer.WriteUInt32(payload.EntityId);
+        writer.WriteUInt32(payload.SequenceId);
         writer.WriteFloat(payload.Throttle);
         writer.WriteFloat(payload.Yaw);
     }
 
     bool TryDeserializeEntityControlInput(BinaryReader& reader, EntityControlInputPayload& payload) {
-        return reader.TryReadFloat(payload.Throttle)
+        return reader.TryReadUInt32(payload.EntityId)
+            && reader.TryReadUInt32(payload.SequenceId)
+            && reader.TryReadFloat(payload.Throttle)
             && reader.TryReadFloat(payload.Yaw);
     }
 

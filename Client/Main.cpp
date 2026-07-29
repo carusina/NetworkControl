@@ -172,6 +172,23 @@ namespace {
 		}
 	}
 
+	// 아직 첫 EntitySpawn을 못 받아 내 EntityId를 모르면 조종 입력을 보낼 수 없음
+	void SendControlInputIfKnown(
+		Client::UdpReceiver& udpReceiver,
+		const Client::EntityWorld& entityWorld,
+		const Common::Ipv4Endpoint& serverUdpEndpoint,
+		float throttle,
+		float yaw)
+	{
+		uint32_t myEntityId = 0;
+		if (!entityWorld.TryGetMyEntityId(myEntityId)) {
+			std::cout << "Not registered yet - try again in a moment." << std::endl;
+			return;
+		}
+
+		udpReceiver.SendControlInput(serverUdpEndpoint, myEntityId, throttle, yaw);
+	}
+
 	bool RunClientControlLoop(const Common::ClientConfig& config)
 	{
 		Client::EntityWorld entityWorld;
@@ -279,7 +296,7 @@ namespace {
 				}
 				else {
 					lastThrottle = ClampInput(value);
-					udpReceiver.SendControlInput(serverUdpEndpoint, lastThrottle, lastYaw);
+					SendControlInputIfKnown(udpReceiver, entityWorld, serverUdpEndpoint, lastThrottle, lastYaw);
 				}
 			}
 			else if (input.rfind("yaw ", 0) == 0)
@@ -290,7 +307,7 @@ namespace {
 				}
 				else {
 					lastYaw = ClampInput(value);
-					udpReceiver.SendControlInput(serverUdpEndpoint, lastThrottle, lastYaw);
+					SendControlInputIfKnown(udpReceiver, entityWorld, serverUdpEndpoint, lastThrottle, lastYaw);
 				}
 			}
 			else if (input == "entities")

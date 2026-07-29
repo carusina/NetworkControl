@@ -86,9 +86,11 @@ namespace Client {
 		metricsCollector_.ResetReceiveTiming();
 	}
 
-	bool UdpReceiver::SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, float throttle, float yaw)
+	bool UdpReceiver::SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, uint32_t entityId, float throttle, float yaw)
 	{
 		Common::EntityControlInputPayload payload;
+		payload.EntityId = entityId;
+		payload.SequenceId = nextControlInputSequenceId_.fetch_add(1) + 1;
 		payload.Throttle = throttle;
 		payload.Yaw = yaw;
 

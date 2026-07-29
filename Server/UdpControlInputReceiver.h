@@ -24,9 +24,6 @@ namespace Server {
 		private:
 			void ReceiveWorker();
 
-			// 발신 IP:포트가 어떤 세션이 등록해둔 UDP 엔드포인트와 일치하는지로 세션을 식별
-			std::shared_ptr<ClientSession> FindSessionByEndpoint(const Common::Ipv4Endpoint& senderEndpoint) const;
-
 		private:
 			SessionManager& sessionManager_;
 			Common::UdpSocket udpSocket_;

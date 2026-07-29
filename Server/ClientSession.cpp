@@ -137,10 +137,16 @@ namespace Server {
 		return *controlSocket_;
 	}
 
-	void ClientSession::ApplyControlInput(float throttle, float yaw)
+	void ClientSession::ApplyControlInput(uint32_t sequenceId, float throttle, float yaw)
 	{
 		std::lock_guard<std::mutex> lock(entityMutex_);
 
+		// UDP 역전으로 오래된 입력이 뒤늦게 도착한 경우 - 이미 적용된 최신 입력을 덮어쓰지 않도록 무시
+		if (sequenceId <= lastAppliedControlInputSequenceId_) {
+			return;
+		}
+
+		lastAppliedControlInputSequenceId_ = sequenceId;
 		throttle_ = Clamp(throttle, -1.0f, 1.0f);
 		yaw_ = Clamp(yaw, -1.0f, 1.0f);
 	}

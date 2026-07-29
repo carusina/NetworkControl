@@ -35,7 +35,7 @@ namespace Client {
 			void ResetReceiveTiming();
 
 			// 조종 입력을 서버로 전송 - Start()에서 바인드해둔 소켓을 그대로 사용
-			bool SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, float throttle, float yaw);
+			bool SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, uint32_t entityId, float throttle, float yaw);
 
 		private:
 			void ReceiveWorker();
@@ -46,6 +46,9 @@ namespace Client {
 			MetricsCollector metricsCollector_;
 			std::thread workerThread_;
 			std::atomic<bool> isRunning_{ false };
+
+			// 조종 입력을 보낼 때마다 증가 - 서버가 UDP 역전을 걸러내는 데 사용
+			std::atomic<uint32_t> nextControlInputSequenceId_{ 0 };
 	};
 
 } // namespace Client

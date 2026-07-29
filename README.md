@@ -78,7 +78,7 @@ enum class MessageType : uint8_t {
 | `RegisterUdpPort` | TCP | C→S | `Port` (uint16) — 이 클라이언트가 UDP를 수신할 포트 |
 | `Play` / `Pause` / `Stop` / `Reset` | TCP | C→S | 없음 (헤더만) |
 | `SetRate` | TCP | C→S | `DataRateHz` (uint32, 30 또는 60) |
-| `EntityControlInput` | UDP | C→S | `Throttle`, `Yaw` (float, -1.0~1.0) |
+| `EntityControlInput` | UDP | C→S | `EntityId`, `SequenceId`, `Throttle`, `Yaw` (float, -1.0~1.0) |
 | `EntityState` | UDP | S→C | `SequenceId`, `Timestamp`, `EntityId`, `PositionX/Y`, `Heading`, `VelocityX/Y` |
 | `EntitySpawn` | TCP | S→C | `EntityId`, `Type`, `PositionX/Y`, `Heading` |
 | `EntityDespawn` | TCP | S→C | `EntityId` |
@@ -90,7 +90,7 @@ enum class MessageType : uint8_t {
 1. **접속**: Client가 TCP로 Server(기본 5000번 포트)에 연결하고, `RegisterUdpPort`로 자신의 UDP 수신 포트를 등록.
 2. **Spawn 캐치업**: 등록 성공 시 서버가 (a) 새 클라이언트에게 **자기 자신의 EntitySpawn을 가장 먼저** 보냄 — 클라이언트는 "접속 후 처음 받은 Spawn = 내 EntityId"로 인식(`EntityWorld::TryGetMyEntityId`). (b) 이미 있던 다른 세션들의 Spawn도 전달(늦게 접속해도 기존 참가자가 보이도록). (c) 새 세션의 Spawn을 다른 모든 기존 세션에 브로드캐스트.
 3. **Play**: 클라이언트가 `play`를 보내면 그 세션의 `SessionState`가 `Playing`이 됨. Playing인 엔티티만 물리 시뮬레이션이 돌고 브로드캐스트를 주고받는다.
-4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 수신 UDP 패킷의 발신 IP:포트를 각 세션이 등록해둔 UDP 엔드포인트와 대조해서 어느 세션의 입력인지 찾는다(`UdpControlInputReceiver::FindSessionByEndpoint`).
+4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 자신의 `EntityId`(첫 Spawn으로 알게 된 값) + 보낼 때마다 증가하는 `SequenceId`를 함께 실어 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 `SessionManager::GetSession(EntityId)`로 바로 세션을 조회하고(O(1), 전체 세션을 순회하지 않음), 발신 IP:포트가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지만 확인(다른 세션 사칭 방지). `ClientSession::ApplyControlInput`은 `SequenceId`가 마지막으로 적용한 값보다 새로울 때만 반영해서, UDP 역전으로 오래된 입력이 늦게 도착해 최신 입력을 덮어쓰는 걸 막는다.
 5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 각 수신자에게, Playing 상태인 모든 엔티티(자기 자신 포함)의 `EntityState`를 하나씩 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
 6. **연결 종료**: 클라이언트가 `quit`하거나 연결이 끊기면, 서버가 그 세션의 `EntityDespawn`을 남은 모든 세션에 브로드캐스트하고 세션을 제거.
 

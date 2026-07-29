@@ -36,7 +36,8 @@ namespace Server {
 			Common::TcpSocket& GetControlSocket();
 
 			// 조종 입력 반영 - UdpControlInputReceiver 스레드가 호출
-			void ApplyControlInput(float throttle, float yaw);
+			// sequenceId가 마지막으로 적용한 값보다 새롭지 않으면(=UDP 역전으로 늦게 도착) 무시
+			void ApplyControlInput(uint32_t sequenceId, float throttle, float yaw);
 
 			// 매 틱 물리 갱신 - UdpStreamingService 워커 스레드가 호출
 			void StepPhysics(double deltaSeconds);
@@ -70,6 +71,7 @@ namespace Server {
 			float velocityY_ = 0.0f;
 			float throttle_ = 0.0f;
 			float yaw_ = 0.0f;
+			uint32_t lastAppliedControlInputSequenceId_ = 0;
 	};
 
 } // namespace Server

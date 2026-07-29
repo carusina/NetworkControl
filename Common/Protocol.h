@@ -48,7 +48,12 @@ namespace Common {
     };
 
     // Throttle/Yaw 둘 다 -1.0 ~ 1.0 범위
+    // EntityId를 실어 보내서 서버가 발신 주소로 세션을 매번 스캔하지 않고 바로 조회할 수 있게 함
+    // SequenceId는 클라이언트가 보낼 때마다 증가시키는 값 - UDP 역전으로 오래된 입력이
+    // 늦게 도착해 최신 입력을 덮어쓰지 않도록 서버가 이 값으로 최신 여부를 판단
     struct EntityControlInputPayload {
+        uint32_t EntityId = 0;
+        uint32_t SequenceId = 0;
         float Throttle = 0.0f;
         float Yaw = 0.0f;
     };
@@ -82,7 +87,7 @@ namespace Common {
     // (struct의 sizeof는 컴파일러 패딩이 낄 수 있어 실제 전송 크기와 다를 수 있으므로 쓰지 않음)
     constexpr size_t RegisterUdpPortPayloadSize = sizeof(uint16_t);
     constexpr size_t SetRatePayloadSize = sizeof(uint32_t);
-    constexpr size_t EntityControlInputPayloadSize = sizeof(float) * 2;
+    constexpr size_t EntityControlInputPayloadSize = sizeof(uint32_t) * 2 + sizeof(float) * 2;
     constexpr size_t EntityStatePayloadSize = sizeof(uint64_t) * 2 + sizeof(uint32_t) + sizeof(float) * 5;
     constexpr size_t EntitySpawnPayloadSize = sizeof(uint32_t) + sizeof(uint8_t) + sizeof(float) * 3;
     constexpr size_t EntityDespawnPayloadSize = sizeof(uint32_t);
