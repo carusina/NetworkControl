@@ -35,7 +35,8 @@ namespace {
 		}
 	}
 
-	void PrintMetrics(const Client::MetricsSnapshot& metrics)
+	// 화면에 출력한 줄 수를 반환 - 다음 프레임을 그리기 전에 그만큼 커서를 올려 지우는 데 씀
+	int PrintMetrics(const Client::MetricsSnapshot& metrics)
 	{
 		std::cout << std::fixed << std::setprecision(2);
 		std::cout << "Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount << ", Loss Rate: " << metrics.LossRate << "%" << ", Out of Order: " << metrics.OutOfOrderCount << std::endl;
@@ -45,34 +46,12 @@ namespace {
 		std::cout << "Delayed Packets: " << metrics.DelayedPacketCount << " / " << metrics.IntervalSampleCount << ", Delayed Packet Rate: " << metrics.DelayedPacketRate << "%" << std::endl;
 
 		std::cout << "Latency: avg " << metrics.AverageLatencyMilliseconds << "ms, min " << metrics.MinLatencyMilliseconds << "ms, max " << metrics.MaxLatencyMilliseconds << "ms (" << metrics.LatencySampleCount << " samples, same-machine only)" << std::endl;
+
+		return 4;
 	}
 
-	// stats 화면이 4줄을 출력하므로, 다음 프레임을 그리기 전에 그만큼 커서를 올려 지움
-	void RunLiveStats(Client::UdpReceiver& udpReceiver)
-	{
-		std::cout << "Live stats - press any key to stop." << std::endl;
-
-		bool isFirstFrame = true;
-
-		while (!_kbhit())
-		{
-			if (!isFirstFrame) {
-				std::cout << "\x1b[4A\x1b[0J";
-			}
-			isFirstFrame = false;
-
-			PrintMetrics(udpReceiver.GetMetrics());
-
-			std::this_thread::sleep_for(StatsRefreshInterval);
-		}
-
-		// 화면을 멈추는 데 사용한 키 입력이 다음 명령 프롬프트로 새어 들어가지 않도록 비움
-		while (_kbhit()) {
-			_getch();
-		}
-	}
-
-	void PrintEntities(const Client::EntityWorld& entityWorld)
+	// 알려진 엔티티 수에 따라 줄 수가 매번 달라지므로, 실제 출력한 줄 수를 반환
+	int PrintEntities(const Client::EntityWorld& entityWorld)
 	{
 		uint32_t myEntityId = 0;
 		const bool hasMyEntityId = entityWorld.TryGetMyEntityId(myEntityId);
@@ -89,6 +68,35 @@ namespace {
 				<< " Heading " << entity.Heading
 				<< " Vel(" << entity.VelocityX << ", " << entity.VelocityY << ")"
 				<< std::endl;
+		}
+
+		return 1 + static_cast<int>(entities.size());
+	}
+
+	// printFrame은 화면을 한 번 그리고 출력한 줄 수를 반환하는 함수 - stats/entities가 공유하는 실시간 갱신 루프
+	template <typename PrintFrameFn>
+	void RunLiveView(PrintFrameFn printFrame)
+	{
+		std::cout << "Live view - press any key to stop." << std::endl;
+
+		bool isFirstFrame = true;
+		int previousLineCount = 0;
+
+		while (!_kbhit())
+		{
+			if (!isFirstFrame) {
+				std::cout << "\x1b[" << previousLineCount << "A\x1b[0J";
+			}
+			isFirstFrame = false;
+
+			previousLineCount = printFrame();
+
+			std::this_thread::sleep_for(StatsRefreshInterval);
+		}
+
+		// 화면을 멈추는 데 사용한 키 입력이 다음 명령 프롬프트로 새어 들어가지 않도록 비움
+		while (_kbhit()) {
+			_getch();
 		}
 	}
 
@@ -287,11 +295,11 @@ namespace {
 			}
 			else if (input == "entities")
 			{
-				PrintEntities(entityWorld);
+				RunLiveView([&entityWorld]() { return PrintEntities(entityWorld); });
 			}
 			else if (input == "stats")
 			{
-				RunLiveStats(udpReceiver);
+				RunLiveView([&udpReceiver]() { return PrintMetrics(udpReceiver.GetMetrics()); });
 			}
 			else {
 				std::cout << "Unknown command." << std::endl;
