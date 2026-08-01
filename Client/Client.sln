@@ -15,6 +15,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ClientCore.Managed", "..\Cl
 		{73C182D6-C415-4A08-9CB3-6583061A0A0C} = {73C182D6-C415-4A08-9CB3-6583061A0A0C}
 	EndProjectSection
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gui", "..\Gui\Gui.csproj", "{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}"
+	ProjectSection(ProjectDependencies) = postProject
+		{033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD} = {033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -47,6 +52,12 @@ Global
 		{033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD}.Release|x64.Build.0 = Release|x64
 		{033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD}.Release|x86.ActiveCfg = Release|Win32
 		{033F8A03-29B1-4D68-AE8C-4C2B2F1E12BD}.Release|x86.Build.0 = Release|Win32
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Debug|x64.ActiveCfg = Debug|x64
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Debug|x64.Build.0 = Debug|x64
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Debug|x86.ActiveCfg = Debug|x64
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Release|x64.ActiveCfg = Release|x64
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Release|x64.Build.0 = Release|x64
+		{5E7A6B3E-8C2E-4B7D-9F3E-2C6A9E8D1F40}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

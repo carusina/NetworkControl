@@ -1,6 +1,6 @@
 # NetworkControl
 
-TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 구현했고, Client 네트워킹 로직을 재사용 가능한 라이브러리(`ClientCore`)로 뽑아낸 뒤 C++/CLI Wrapper(`ClientCore.Managed`)까지 만든 상태 — 다음은 이 위에 C# WPF GUI를 얹는 단계.
+TCP로 제어하고 UDP로 고주기 데이터를 주고받는 서버/클라이언트 네트워크 시스템. **2D 멀티플레이어 헬기 시뮬레이션**(서버 권위 물리)을 구현했고, Client 네트워킹 로직을 재사용 가능한 라이브러리(`ClientCore`)로 뽑아낸 뒤 C++/CLI Wrapper(`ClientCore.Managed`)를 거쳐 C# WPF GUI(`Gui`)까지 얹은 상태.
 
 ## 기술 스택 / 빌드 환경
 
@@ -17,6 +17,7 @@ Server/               TCP 제어 + UDP 물리 시뮬레이션/브로드캐스트
 ClientCore/           클라이언트 네트워킹 로직 (정적 라이브러리) - 콘솔/GUI가 공유
 ClientCore.Managed/   C++/CLI wrapper (.dll) - GameClient를 C#에서 쓸 수 있게 감쌈
 Client/               ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명령 파싱/출력)
+Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 ```
 
 | 위치 | 파일 | 역할 |
@@ -43,6 +44,10 @@ Client/               ClientCore를 쓰는 콘솔 REPL (GameClient 하나 + 명�
 | ClientCore.Managed | `ManagedGameClient.h` / `.cpp` | `GameClient`를 감싼 `ref class` — `String^`↔`std::string` 등 타입 변환, `IDisposable`(`~T`/`!T`) 패턴 |
 | ClientCore.Managed | `ManagedTypes.h` | `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 구조체를 그대로 옮긴 C# 바인딩용 POCO |
 | Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
+| Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz) |
+| Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 월드 좌표를 고정 배율 캔버스 좌표로 매핑(`WorldExtent` 밖은 clamp) |
+| Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 고정 전체 맵 Canvas, 수신 통계 |
+| Gui | `RelayCommand.cs` | WPF 기본 제공이 없는 `ICommand` 구현체 |
 
 ## 아키텍처 개요
 
@@ -233,7 +238,10 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 
 **4) 관계없는 `draco.lib`와 링크 충돌** — Google의 3D 압축 라이브러리인 `draco.lib`가 `std::bad_alloc`/`std::exception` 심볼을 우리 프로젝트와 중복 정의한다는 링크 에러가 났다. 이 프로젝트는 draco를 전혀 참조한 적이 없어서, vcpkg 전역 통합(`vcpkg integrate install`)이 이 컴퓨터에 예전에 설치해둔 무관한 패키지의 lib 경로를 새 프로젝트에도 끼워 넣은 것으로 추정됨. `<VcpkgEnabled>false</VcpkgEnabled>`를 vcxproj에 추가해서 이 프로젝트만 vcpkg 전역 통합에서 빼서 해결.
 
-## 다음 단계 (내일 — C# WPF 앱)
+## C# WPF GUI (`Gui`)
 
-- MVVM. Throttle/Yaw는 슬라이더(키보드 실시간 홀드 아님, 드래그해서 값 설정), 2D 화면은 카메라가 헬기를 따라가지 않는 고정 전체 맵 뷰(월드 좌표를 캔버스에 고정 배율로 매핑, 경계 벗어나면 clamp). `DispatcherTimer`로 주기적으로 `GetEntities()`/`GetMetrics()` 호출해서 갱신.
-- 새 WPF 프로젝트가 `ClientCore.Managed.dll`을 참조하고, `ClientCoreManaged::ManagedGameClient` 사용.
+- **프로젝트 형식**: SDK-style `.csproj` (`net48`, `UseWPF=true`) — 나머지 프로젝트가 쓰는 레거시 vcxproj 스타일과 다르게, WPF 쪽은 SDK-style이 훨씬 짧고 `.xaml`을 자동으로 인식해서 이걸 씀. `ClientCore.Managed.vcxproj`를 `ProjectReference`로 참조(x64만 지원 — `/clr` 매니지드 DLL은 프로세스 비트수가 맞아야 로드되므로 `PlatformTarget`을 `x64`로 고정). `Client.sln`에 세 번째 프로젝트로 추가됨.
+- **MVVM**: `MainViewModel`이 `ManagedGameClient` 하나를 들고 있고, Connect/Play/Pause/Stop/Reset/SetRate는 `RelayCommand`로 바인딩. Throttle/Yaw는 슬라이더 값이 바뀔 때마다(드래그 중 계속) `SendControlInput` 호출 — 키보드 실시간 홀드 방식이 아님.
+- **폴링**: 이벤트 알림이 없는 `ManagedGameClient` 특성에 맞춰 `DispatcherTimer`(30Hz)가 `GetEntities()`/`GetMetrics()`를 주기적으로 불러 `ObservableCollection<EntityViewModel>`과 `Metrics`를 갱신. 매 틱마다 컬렉션을 비우고 다시 채우지 않고, `EntityId` 기준으로 기존 항목은 갱신·사라진 항목만 제거(Despawn 대응).
+- **2D 뷰**: 카메라가 헬기를 따라가지 않는 고정 배율 전체 맵(`EntityViewModel.WorldExtent = ±300` 월드 단위를 640x640 캔버스에 매핑, 벗어나면 가장자리에 clamp). 원, Circle 안쪽 방향선(`RotateTransform`)으로 위치/헤딩 표시, 내 엔티티는 다른 색으로 강조.
+- **알려진 한계**: 화면 크기가 고정(`ResizeMode="CanMinimize"`)이고 `WorldExtent`도 상수로 박혀 있어서, 헬기가 그 범위를 벗어나 멀리 날아가면 캔버스 가장자리에 눌러붙어 보임(줌/팬은 아직 없음).
