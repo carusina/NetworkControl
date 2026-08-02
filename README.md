@@ -44,9 +44,11 @@ Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 | ClientCore.Managed | `ManagedGameClient.h` / `.cpp` | `GameClient`를 감싼 `ref class` — `String^`↔`std::string` 등 타입 변환, `IDisposable`(`~T`/`!T`) 패턴 |
 | ClientCore.Managed | `ManagedTypes.h` | `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 구조체를 그대로 옮긴 C# 바인딩용 POCO |
 | Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
-| Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz) |
-| Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 월드 좌표를 고정 배율 캔버스 좌표로 매핑(`WorldExtent` 밖은 clamp) |
-| Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 고정 전체 맵 Canvas, 수신 통계 |
+| Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz), 매 폴링마다 카메라 중심(내 위치) 갱신 |
+| Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 카메라(내 위치) 기준 상대 좌표를 캔버스 픽셀로 매핑(`WorldExtent` 밖은 clamp) |
+| Gui | `ViewModels/ViewModelBase.cs` | `INotifyPropertyChanged` 공통 구현 (`SetProperty`/`RaisePropertyChanged` 헬퍼) |
+| Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 레이더/HUD 스타일 Canvas, 수신 통계 |
+| Gui | `Views/InverseBooleanConverter.cs` | `bool` 반전 `IValueConverter` - 연결된 뒤 Host/Port 입력을 잠그는 데 씀 |
 | Gui | `RelayCommand.cs` | WPF 기본 제공이 없는 `ICommand` 구현체 |
 
 ## 아키텍처 개요
@@ -247,8 +249,37 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 
 ## C# WPF GUI (`Gui`)
 
-- **프로젝트 형식**: SDK-style `.csproj` (`net48`, `UseWPF=true`) — 나머지 프로젝트가 쓰는 레거시 vcxproj 스타일과 다르게, WPF 쪽은 SDK-style이 훨씬 짧고 `.xaml`을 자동으로 인식해서 이걸 씀. `ClientCore.Managed.vcxproj`를 `ProjectReference`로 참조(x64만 지원 — `/clr` 매니지드 DLL은 프로세스 비트수가 맞아야 로드되므로 `PlatformTarget`을 `x64`로 고정). `Client.sln`에 세 번째 프로젝트로 추가됨.
-- **MVVM**: `MainViewModel`이 `ManagedGameClient` 하나를 들고 있고, Connect/Play/Pause/Stop/Reset/SetRate는 `RelayCommand`로 바인딩. Throttle/Yaw는 슬라이더 값이 바뀔 때마다(드래그 중 계속) `SendControlInput` 호출 — 키보드 실시간 홀드 방식이 아님.
-- **폴링**: 이벤트 알림이 없는 `ManagedGameClient` 특성에 맞춰 `DispatcherTimer`(30Hz)가 `GetEntities()`/`GetMetrics()`를 주기적으로 불러 `ObservableCollection<EntityViewModel>`과 `Metrics`를 갱신. 매 틱마다 컬렉션을 비우고 다시 채우지 않고, `EntityId` 기준으로 기존 항목은 갱신·사라진 항목만 제거(Despawn 대응).
-- **2D 뷰(레이더/HUD 스타일)**: 카메라가 내 엔티티를 따라가는 고정 배율 뷰 — 캔버스 중앙이 항상 "내 위치"고, 매 폴링(`MainViewModel.Poll`)마다 내 엔티티의 최신 좌표를 카메라 중심으로 삼아 모든 엔티티의 `EntityViewModel.UpdateCanvasPosition(cameraX, cameraY)`를 다시 계산함(`WorldExtent = ±300` 월드 단위가 640x640 캔버스에 들어감, 벗어나면 가장자리에 clamp). 배경은 격자 타일 + 동심원 + 십자선, 엔티티는 헤딩 방향을 가리키는 화살촉 `Polygon` + `DropShadowEffect` 네온 글로우(내 엔티티는 주황, 나머지는 시안)로 표시.
-- **알려진 한계**: 화면 크기가 고정(`ResizeMode="CanMinimize"`)이고 `WorldExtent`도 상수로 박혀 있어서, 다른 엔티티가 나에게서 그 범위 밖으로 멀어지면 캔버스 가장자리에 눌러붙어 보임(줌/팬은 아직 없음). 아직 내 엔티티를 못 받았을 때(스폰 전)는 카메라가 월드 원점(0,0)을 기준으로 함.
+### 프로젝트 설정
+
+`Gui.csproj`는 나머지 프로젝트(레거시 vcxproj 스타일)와 다르게 **SDK-style** `.csproj`를 씀 (`net48`, `UseWPF=true`) — WPF 쪽은 SDK-style이 훨씬 짧고 `.xaml`/`.xaml.cs`를 자동으로 인식해서(수동으로 `Page`/`ApplicationDefinition` 항목을 안 적어도 됨) 이걸 선택함. `ClientCore.Managed.vcxproj`를 `ProjectReference`로 참조하고, `PlatformTarget`을 `x64`로 고정(`/clr` 매니지드 DLL은 프로세스 비트수가 맞아야 로드되므로 AnyCPU로 두면 안 됨). `Client.sln`에 세 번째 프로젝트로 추가되어 있고(솔루션에 SDK-style 프로젝트를 추가할 때 프로젝트 타입 GUID는 `{9A19103F-16F7-4668-BE54-9A1E7A4F7556}`), `ClientCore.Managed`에 대한 `ProjectDependencies`도 걸어둠.
+
+### MVVM 구조
+
+- **`ViewModels/MainViewModel.cs`**: `ManagedGameClient` 인스턴스 하나를 소유(`IDisposable`, 창 닫힐 때 `Dispose()`). Connect/Play/Pause/Stop/Reset/SetRate는 `RelayCommand`로 바인딩. Throttle/Yaw 프로퍼티는 슬라이더 드래그로 값이 바뀔 때마다(연속적으로) setter에서 바로 `SendControlInput`을 호출 — 키보드 실시간 홀드 방식이 아니라 "레버를 특정 값에 놓는" 개념.
+- **`ViewModels/EntityViewModel.cs`**: 엔티티 1개의 표시 상태(위치/헤딩/캔버스 좌표). `PositionX/Y`는 `UpdateState`로, `CanvasLeft/Top`은 별도로 `UpdateCanvasPosition(cameraWorldX, cameraWorldY)`로 갱신 — 이 둘이 분리된 이유는 아래 "카메라가 나를 따라가게" 항목 참고.
+- **`ViewModels/ViewModelBase.cs`**: `INotifyPropertyChanged` 공통 구현. `SetProperty<T>(ref field, value)`가 값이 실제로 바뀌었을 때만 `PropertyChanged`를 올리고 `bool`을 반환 — 파생 클래스가 "이 프로퍼티가 바뀌면 저 계산 프로퍼티도 다시 알려야 함" 같은 연쇄 알림을 조건부로 걸 때 씀.
+- **`Views/MainWindow.xaml` (+ code-behind)**: 왼쪽에 연결/재생 제어/조종/통계 패널(`StackPanel`), 오른쪽에 레이더 뷰(`Canvas`). code-behind는 `MainViewModel`을 생성해서 `DataContext`에 꽂고, `Closing`에서 `Dispose()`를 부르는 것 말고는 로직이 없음(뷰 로직은 전부 XAML 바인딩/트리거).
+- **`RelayCommand.cs`**: WPF에 `ICommand` 기본 구현체가 없어서 직접 만듦. `CanExecuteChanged`는 `CommandManager.RequerySuggested`에 얹어서, 포커스 이동이나 클릭 같은 UI 이벤트가 생길 때마다 자동으로 재평가되게 함(직접 `RaiseCanExecuteChanged`를 호출할 필요 없음).
+- **`Views/InverseBooleanConverter.cs`**: `IsConnected`를 반전시켜 `IsEnabled`에 바인딩하기 위한 `bool` 반전 컨버터. 연결되고 나면 Host/Port 입력란이 잠김.
+
+### 폴링 & 엔티티 동기화
+
+`ManagedGameClient`는 이벤트 알림이 없는 폴링 API라서(`ClientCore.Managed` 항목 참고), `MainViewModel`이 `DispatcherTimer`(30Hz, 서버 기본 스트리밍 주기에 맞춤)로 `GetEntities()`/`GetMetrics()`를 주기적으로 불러 갱신한다. 매 틱마다 `ObservableCollection`을 비우고 다시 채우면 불필요한 UI 재구성이 생기므로, `EntityId`를 키로 하는 `Dictionary`로 기존 항목은 `UpdateState`만 호출하고, 이번 틱에 서버가 더 이상 알려주지 않는(Despawn된) 항목만 컬렉션에서 제거한다.
+
+### 2D 뷰 — 레이더/HUD 스타일 + 카메라가 나를 따라감
+
+배경은 `DrawingBrush`로 타일링한 격자선 + 동심원 4개 + 십자선으로 레이더 화면처럼 꾸몄고, 엔티티는 원+선 대신 헤딩 방향을 가리키는 화살촉 `Polygon`에 `DropShadowEffect`로 네온 글로우를 줌(내 엔티티는 주황, 나머지는 시안).
+
+캔버스 중앙은 항상 "내 위치"다 — `EntityViewModel`이 처음엔 월드 원점(0,0) 기준 고정 좌표로 `CanvasLeft/Top`을 계산했는데(카메라가 헬기를 안 따라가는 고정 전체 맵), 나중에 "내가 항상 중심에 오게" 요구사항이 추가되면서 카메라 중심 자체가 매 틱 바뀌는 값(내 엔티티의 현재 위치)이 됐다. 그래서 좌표 계산을 엔티티 하나만으로 끝낼 수 없고, `MainViewModel.Poll()`이 이번 틱의 모든 엔티티 상태를 다 갱신한 *다음에* 내 엔티티의 위치를 알아내서, 그 값을 모든 `EntityViewModel.UpdateCanvasPosition(cameraX, cameraY)`에 한 번씩 더 넘겨주는 2단계 구조가 됐다(아직 내 엔티티를 못 받았으면 카메라는 월드 원점을 기준으로 함). `WorldExtent = ±300` 월드 단위가 640×640 캔버스에 매핑되고, 그 범위를 벗어나는 엔티티는 가장자리에 clamp된다.
+
+### 알려진 한계
+
+화면 크기가 고정(`ResizeMode="CanMinimize"`)이고 `WorldExtent`도 상수로 박혀 있어서 줌/팬은 없고, 다른 엔티티가 나에게서 그 범위 밖으로 멀어지면 그냥 캔버스 가장자리에 눌러붙어 보인다(방향 표시 화살표 같은 건 없음).
+
+### 삽질 기록
+
+**1) `Run.Text` 바인딩이 읽기 전용 프로퍼티에서 `InvalidOperationException`** — `내 엔티티 ID` 텍스트를 `<Run Text="{Binding MyEntityIdText}"/>`로 바인딩했더니 `'TwoWay 또는 OneWayToSource 바인딩은 읽기 전용 속성에서 작동되지 않습니다'` 예외가 났다. `TextBlock.Text`는 기본 바인딩 모드가 `OneWay`인데, `Run.Text`는 `TextBox.Text`처럼 **기본이 `TwoWay`**라서 `private set`뿐인 프로퍼티에 물리면 바로 터진다. **고친 방법**: `Mode=OneWay`를 명시.
+
+**2) `x:Static`에 네임스페이스 prefix 없이 점(dot) 표기로 바로 씀** — `{x:Static Gui.Views.InverseBooleanConverter.Instance}`처럼 완전한 이름을 그냥 이어 썼더니 리소스를 못 찾음. XAML의 `x:Static`은 **`xmlns:local="clr-namespace:..."`로 선언해둔 prefix를 통해서만** 타입을 참조할 수 있다. **고친 방법**: `Window`에 `xmlns:local="clr-namespace:Gui.Views"`를 선언하고 `{x:Static local:InverseBooleanConverter.Instance}`로 참조.
+
+**3) 헤딩 인디케이터의 "회전 전 기본 방향"이 실제 이동 방향과 90도 어긋남** — 처음엔 헤딩선을 `X1=8,Y1=8,X2=8,Y2=0`(회전 전엔 위쪽을 가리킴)으로 그렸는데, 물리 모델은 `heading=0`일 때 `velocityX=cos(0)*speed=speed`(월드 +X, 화면상 오른쪽)로 움직인다. 회전각(`HeadingDegrees = -heading * 180/π`) 계산 자체는 맞았지만, 회전 전 기준 방향이 "위"였던 탓에 화살표가 항상 실제 진행 방향보다 90도 돌아간 채로 보였다. **고친 방법**: 기본 방향을 오른쪽(`X2=16,Y2=8`)으로 맞춤 — 이후 화살촉 `Polygon`으로 바꿀 때도 이 기준(회전 전=오른쪽=heading 0)을 그대로 이어받음.
