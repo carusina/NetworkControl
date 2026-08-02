@@ -3,6 +3,24 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Gui.Views"
         Title="NetworkControl GUI" Height="760" Width="1020" ResizeMode="CanMinimize">
+    <Window.Resources>
+        <!-- 레이더 느낌의 배경 격자 - 40px 타일을 반복해서 그림 -->
+        <DrawingBrush x:Key="RadarGridBrush" TileMode="Tile" Viewport="0,0,40,40" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#1A00FFAA" Thickness="1"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="0,0" EndPoint="40,0"/>
+                            <LineGeometry StartPoint="0,0" EndPoint="0,40"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </Window.Resources>
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280"/>
@@ -65,47 +83,66 @@
             </GroupBox>
         </StackPanel>
 
-        <!-- 오른쪽: 고정 배율 전체 맵 뷰 -->
-        <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Background="#FF101010"
+        <!-- 오른쪽: 고정 배율 전체 맵 뷰 (레이더/HUD 스타일) -->
+        <Border Grid.Column="1" BorderBrush="#FF00FFAA" BorderThickness="1" Background="#FF05080A"
                 Width="640" Height="640" HorizontalAlignment="Left" VerticalAlignment="Top">
-            <Canvas Width="640" Height="640" ClipToBounds="True">
-                <ItemsControl ItemsSource="{Binding Entities}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <Canvas/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding CanvasLeft}"/>
-                            <Setter Property="Canvas.Top" Value="{Binding CanvasTop}"/>
-                        </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Width="16" Height="16">
-                                <Ellipse Width="16" Height="16">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="DeepSkyBlue"/>
+            <Grid Width="640" Height="640" ClipToBounds="True">
+                <Rectangle Fill="{StaticResource RadarGridBrush}"/>
+
+                <!-- 내 엔티티를 중심에 고정한 레이더 링 + 십자선 (카메라가 나를 따라감) -->
+                <Ellipse Width="160" Height="160" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Ellipse Width="320" Height="320" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Ellipse Width="480" Height="480" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Ellipse Width="600" Height="600" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Line X1="320" Y1="0" X2="320" Y2="640" Stroke="#2200FFAA" StrokeThickness="1"/>
+                <Line X1="0" Y1="320" X2="640" Y2="320" Stroke="#2200FFAA" StrokeThickness="1"/>
+
+                <Canvas>
+                    <ItemsControl ItemsSource="{Binding Entities}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding CanvasLeft}"/>
+                                <Setter Property="Canvas.Top" Value="{Binding CanvasTop}"/>
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- 헬기 모양 화살촉 - 뾰족한 코가 진행 방향(Heading)을 가리킴 -->
+                                <Polygon Points="16,8 2,2 7,8 2,14">
+                                    <Polygon.RenderTransform>
+                                        <RotateTransform Angle="{Binding HeadingDegrees}" CenterX="8" CenterY="8"/>
+                                    </Polygon.RenderTransform>
+                                    <Polygon.Style>
+                                        <Style TargetType="Polygon">
+                                            <Setter Property="Fill" Value="Cyan"/>
+                                            <Setter Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect Color="Cyan" BlurRadius="14" ShadowDepth="0" Opacity="0.9"/>
+                                                </Setter.Value>
+                                            </Setter>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsMine}" Value="True">
                                                     <Setter Property="Fill" Value="OrangeRed"/>
+                                                    <Setter Property="Effect">
+                                                        <Setter.Value>
+                                                            <DropShadowEffect Color="OrangeRed" BlurRadius="16" ShadowDepth="0" Opacity="1"/>
+                                                        </Setter.Value>
+                                                    </Setter>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                                <Line X1="8" Y1="8" X2="16" Y2="8" Stroke="White" StrokeThickness="2">
-                                    <Line.RenderTransform>
-                                        <RotateTransform Angle="{Binding HeadingDegrees}" CenterX="8" CenterY="8"/>
-                                    </Line.RenderTransform>
-                                </Line>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </Canvas>
+                                    </Polygon.Style>
+                                </Polygon>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+            </Grid>
         </Border>
     </Grid>
 </Window>

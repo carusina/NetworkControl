@@ -182,6 +182,19 @@ namespace Gui.ViewModels
                 entityLookup_.Remove(staleId);
             }
 
+            // 카메라 중심 = 내 엔티티의 현재 위치 (아직 스폰 전이면 월드 원점)
+            double cameraX = 0.0;
+            double cameraY = 0.0;
+            if (myEntityId.HasValue && entityLookup_.TryGetValue(myEntityId.Value, out var myVm))
+            {
+                cameraX = myVm.PositionX;
+                cameraY = myVm.PositionY;
+            }
+            foreach (var vm in entityLookup_.Values)
+            {
+                vm.UpdateCanvasPosition(cameraX, cameraY);
+            }
+
             MyEntityIdText = myEntityId.HasValue ? myEntityId.Value.ToString() : "-";
             Metrics = client_.GetMetrics();
         }
