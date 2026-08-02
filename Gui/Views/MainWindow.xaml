@@ -89,7 +89,8 @@
             <Grid Width="640" Height="640" ClipToBounds="True">
                 <Rectangle Fill="{StaticResource RadarGridBrush}"/>
 
-                <!-- 내 엔티티를 중심에 고정한 레이더 링 + 십자선 (카메라가 나를 따라감) -->
+                <!-- 링/십자선 = 내 기수 기준 상대 방위(전방/후방/좌/우) 기준선이라 화면에 고정 -
+                     회전은 엔티티 쪽(EntityViewModel)에서 상대 방위를 계산할 때만 적용됨 -->
                 <Ellipse Width="160" Height="160" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Ellipse Width="320" Height="320" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Ellipse Width="480" Height="480" Stroke="#3300FFAA" StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>

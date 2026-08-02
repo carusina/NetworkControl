@@ -266,11 +266,13 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 
 `ManagedGameClient`는 이벤트 알림이 없는 폴링 API라서(`ClientCore.Managed` 항목 참고), `MainViewModel`이 `DispatcherTimer`(30Hz, 서버 기본 스트리밍 주기에 맞춤)로 `GetEntities()`/`GetMetrics()`를 주기적으로 불러 갱신한다. 매 틱마다 `ObservableCollection`을 비우고 다시 채우면 불필요한 UI 재구성이 생기므로, `EntityId`를 키로 하는 `Dictionary`로 기존 항목은 `UpdateState`만 호출하고, 이번 틱에 서버가 더 이상 알려주지 않는(Despawn된) 항목만 컬렉션에서 제거한다.
 
-### 2D 뷰 — 레이더/HUD 스타일 + 카메라가 나를 따라감
+### 2D 뷰 — 레이더/HUD 스타일, heading-up
 
 배경은 `DrawingBrush`로 타일링한 격자선 + 동심원 4개 + 십자선으로 레이더 화면처럼 꾸몄고, 엔티티는 원+선 대신 헤딩 방향을 가리키는 화살촉 `Polygon`에 `DropShadowEffect`로 네온 글로우를 줌(내 엔티티는 주황, 나머지는 시안).
 
-캔버스 중앙은 항상 "내 위치"다 — `EntityViewModel`이 처음엔 월드 원점(0,0) 기준 고정 좌표로 `CanvasLeft/Top`을 계산했는데(카메라가 헬기를 안 따라가는 고정 전체 맵), 나중에 "내가 항상 중심에 오게" 요구사항이 추가되면서 카메라 중심 자체가 매 틱 바뀌는 값(내 엔티티의 현재 위치)이 됐다. 그래서 좌표 계산을 엔티티 하나만으로 끝낼 수 없고, `MainViewModel.Poll()`이 이번 틱의 모든 엔티티 상태를 다 갱신한 *다음에* 내 엔티티의 위치를 알아내서, 그 값을 모든 `EntityViewModel.UpdateCanvasPosition(cameraX, cameraY)`에 한 번씩 더 넘겨주는 2단계 구조가 됐다(아직 내 엔티티를 못 받았으면 카메라는 월드 원점을 기준으로 함). `WorldExtent = ±300` 월드 단위가 640×640 캔버스에 매핑되고, 그 범위를 벗어나는 엔티티는 가장자리에 clamp된다.
+**카메라 위치 추적**: 캔버스 중앙은 항상 "내 위치"다 — `EntityViewModel`이 처음엔 월드 원점(0,0) 기준 고정 좌표로 `CanvasLeft/Top`을 계산했는데(카메라가 헬기를 안 따라가는 고정 전체 맵), 나중에 "내가 항상 중심에 오게" 요구사항이 추가되면서 카메라 중심 자체가 매 틱 바뀌는 값(내 엔티티의 현재 위치)이 됐다. 그래서 좌표 계산을 엔티티 하나만으로 끝낼 수 없고, `MainViewModel.Poll()`이 이번 틱의 모든 엔티티 상태를 다 갱신한 *다음에* 내 엔티티의 위치를 알아내서, 그 값을 모든 `EntityViewModel.UpdateCanvasPosition(cameraX, cameraY, cameraHeading)`에 한 번씩 더 넘겨주는 2단계 구조가 됐다(아직 내 엔티티를 못 받았으면 카메라는 월드 원점/헤딩 0을 기준으로 함). `WorldExtent = ±300` 월드 단위가 640×640 캔버스에 매핑되고, 그 범위를 벗어나는 엔티티는 가장자리에 clamp된다.
+
+**카메라 헤딩 추적(heading-up)**: 처음엔 위치만 따라가고 축은 월드에 고정(north-up)이라, 내가 회전하면 화면에서도 내 마커가 그 자리에서 도는 것처럼 보여서 비직관적이었다. 실제 항공/헬기 HUD처럼 "내 기수 = 항상 화면 위"가 되도록, 카메라 기준 상대 위치·헤딩을 `delta = 90° - cameraHeading`만큼 같이 회전시킨다(`EntityViewModel.UpdateCanvasPosition`). 내 엔티티는 `heading_ == cameraHeading`이라 상대 회전이 매번 상쇄돼 화면 회전각이 항상 `-90°`(=위)로 고정되고, 다른 엔티티는 나에 대한 상대 방위로 표시된다. 링/격자/십자선 같은 배경은 **회전시키지 않는다** — 이 기준선들은 월드 방향이 아니라 "내 기수 기준 상대 방위(전방/후방/좌/우)"를 나타내는 화면 고정 눈금이라, 회전은 오직 엔티티 쪽 상대 방위 계산에만 있으면 된다(원래 배경도 같이 돌리려다가 되돌림 — 아래 삽질 기록 4번 참고).
 
 ### 알려진 한계
 
@@ -283,3 +285,5 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 **2) `x:Static`에 네임스페이스 prefix 없이 점(dot) 표기로 바로 씀** — `{x:Static Gui.Views.InverseBooleanConverter.Instance}`처럼 완전한 이름을 그냥 이어 썼더니 리소스를 못 찾음. XAML의 `x:Static`은 **`xmlns:local="clr-namespace:..."`로 선언해둔 prefix를 통해서만** 타입을 참조할 수 있다. **고친 방법**: `Window`에 `xmlns:local="clr-namespace:Gui.Views"`를 선언하고 `{x:Static local:InverseBooleanConverter.Instance}`로 참조.
 
 **3) 헤딩 인디케이터의 "회전 전 기본 방향"이 실제 이동 방향과 90도 어긋남** — 처음엔 헤딩선을 `X1=8,Y1=8,X2=8,Y2=0`(회전 전엔 위쪽을 가리킴)으로 그렸는데, 물리 모델은 `heading=0`일 때 `velocityX=cos(0)*speed=speed`(월드 +X, 화면상 오른쪽)로 움직인다. 회전각(`HeadingDegrees = -heading * 180/π`) 계산 자체는 맞았지만, 회전 전 기준 방향이 "위"였던 탓에 화살표가 항상 실제 진행 방향보다 90도 돌아간 채로 보였다. **고친 방법**: 기본 방향을 오른쪽(`X2=16,Y2=8`)으로 맞춤 — 이후 화살촉 `Polygon`으로 바꿀 때도 이 기준(회전 전=오른쪽=heading 0)을 그대로 이어받음.
+
+**4) heading-up으로 바꾸면서 배경(격자/십자선)까지 같이 회전시켰다가 되돌림** — 처음엔 "카메라가 도는 만큼 월드 전체(격자+십자선)도 반대로 돌려야 heading-up이 맞다"고 생각해서 `RotateTransform`으로 배경까지 회전시켰다. 그런데 이 프로젝트의 링/십자선은 애초에 "내 위치 중심"이라는 화면 고정 기준선(전방/후방/좌/우 표시)이지 월드 좌표축이 아니었어서, 배경을 돌리면 오히려 기준선 자체가 흔들리는 이상한 결과가 됐다. 실제 unstabilized/head-up 레이더도 링·기준선은 화면(자기 기수)에 고정하고, 회전은 표적(엔티티)의 상대 방위 계산에만 반영한다. **고친 방법**: 배경의 `RotateTransform`과 그걸 위해 추가했던 `MainViewModel.CameraRotationDegrees`를 제거하고, 회전은 `EntityViewModel.UpdateCanvasPosition`의 상대 위치/헤딩 계산에만 남김.
