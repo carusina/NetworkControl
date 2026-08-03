@@ -40,7 +40,7 @@ namespace Client {
 		// 전송률 변경 후 새 기준으로 간격을 계산
 		void SetExpectedDataRate(Common::DataRate dataRate);
 
-		// Pause, Stop, Play 이후 이전 수신 시각을 기준으로 삼지 않음
+		// Pause, Play 이후 이전 수신 시각을 기준으로 삼지 않음 (Stop/Reset은 ResetMetrics를 씀)
 		void ResetReceiveTiming();
 
 		void Reset();

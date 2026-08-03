@@ -45,19 +45,10 @@ namespace Server {
 		}
 	}
 
+	// Stop: 통계(수신 시퀀스 번호 체계)와 엔티티 상태(위치 등) 둘 다 초기화
 	void ClientSession::Stop()
 	{
-		if (state_ != Common::SessionState::Stopped)
-		{
-			state_ = Common::SessionState::Stopped;
-			std::cout << "[Session " << sessionId_ << "] Stopped" << std::endl;
-		}
-	}
-
-	void ClientSession::Reset()
-	{
 		state_ = Common::SessionState::Stopped;
-		dataRate_ = Common::DataRate::Hz30;
 		nextSequenceId_ = 0;
 
 		{
@@ -72,7 +63,14 @@ namespace Server {
 			yaw_ = 0.0f;
 		}
 
-		std::cout << "[Session " << sessionId_ << "] Reset: Stopped, 30Hz, SequenceId 0, entity origin" << std::endl;
+		std::cout << "[Session " << sessionId_ << "] Stopped: SequenceId 0, entity origin" << std::endl;
+	}
+
+	// Reset: 통계(수신 시퀀스 번호 체계)만 초기화 - 엔티티 위치/속도는 그대로 둠
+	void ClientSession::Reset()
+	{
+		nextSequenceId_ = 0;
+		std::cout << "[Session " << sessionId_ << "] Reset: SequenceId 0 (entity state kept)" << std::endl;
 	}
 
 	void ClientSession::SetRate(uint32_t dataRateHz)

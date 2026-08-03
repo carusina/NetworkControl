@@ -99,7 +99,8 @@ namespace Client {
 			return false;
 		}
 
-		udpReceiver_.ResetReceiveTiming();
+		// Stop은 서버 쪽 엔티티/시퀀스가 전부 초기화되므로, 통계도 전부 초기화(ResetReceiveTiming보다 강함)
+		udpReceiver_.ResetMetrics();
 		return true;
 	}
 

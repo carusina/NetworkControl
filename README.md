@@ -47,7 +47,7 @@ Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 | Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz), 매 폴링마다 카메라 중심(내 위치) 갱신 |
 | Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 카메라(내 위치) 기준 상대 좌표를 캔버스 픽셀로 매핑(`WorldExtent` 밖은 clamp) |
 | Gui | `ViewModels/ViewModelBase.cs` | `INotifyPropertyChanged` 공통 구현 (`SetProperty`/`RaisePropertyChanged` 헬퍼) |
-| Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 레이더/HUD 스타일 Canvas, 수신 통계 |
+| Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 레이더/HUD 스타일 Canvas, `MetricsSnapshot` 전체 필드를 보여주는 수신 통계 패널 |
 | Gui | `Views/InverseBooleanConverter.cs` | `bool` 반전 `IValueConverter` - 연결된 뒤 Host/Port 입력을 잠그는 데 씀 |
 | Gui | `RelayCommand.cs` | WPF 기본 제공이 없는 `ICommand` 구현체 |
 
@@ -105,6 +105,9 @@ enum class MessageType : uint8_t {
 1. **접속**: Client가 TCP로 Server(기본 5000번 포트)에 연결하고, `RegisterUdpPort`로 자신의 UDP 수신 포트를 등록.
 2. **Spawn 캐치업**: 등록 성공 시 서버가 (a) 새 클라이언트에게 **자기 자신의 EntitySpawn을 가장 먼저** 보냄 — 클라이언트는 "접속 후 처음 받은 Spawn = 내 EntityId"로 인식(`EntityWorld::TryGetMyEntityId`). (b) 이미 있던 다른 세션들의 Spawn도 전달(늦게 접속해도 기존 참가자가 보이도록). (c) 새 세션의 Spawn을 다른 모든 기존 세션에 브로드캐스트.
 3. **Play**: 클라이언트가 `play`를 보내면 그 세션의 `SessionState`가 `Playing`이 됨. Playing인 엔티티만 물리 시뮬레이션이 돌고 브로드캐스트를 주고받는다.
+   - **Pause**: `SessionState`를 `Paused`로만 바꿈 — 위치/속도/통계 전부 그대로 유지, `Play`로 이어서 재개 가능.
+   - **Reset**: 엔티티 위치/속도는 그대로 두고, **통계만** 초기화 — 서버 쪽 `EntityState` 시퀀스 번호(`nextSequenceId_`)를 0으로 되돌리고, 클라이언트도 함께 `MetricsCollector::Reset()`으로 유실률/지연 등 누적 통계를 지움.
+   - **Stop**: `SessionState`를 `Stopped`로 바꾸고, **통계와 엔티티 위치 둘 다** 초기화 — Reset이 하는 일 전부 + 위치/속도/헤딩/조종입력을 원점으로.
 4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 자신의 `EntityId`(첫 Spawn으로 알게 된 값) + 보낼 때마다 증가하는 `SequenceId`를 함께 실어 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 `SessionManager::GetSession(EntityId)`로 바로 세션을 조회하고(O(1), 전체 세션을 순회하지 않음), 발신 IP:포트가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지만 확인(다른 세션 사칭 방지). `ClientSession::ApplyControlInput`은 `SequenceId`가 마지막으로 적용한 값보다 새로울 때만 반영해서, UDP 역전으로 오래된 입력이 늦게 도착해 최신 입력을 덮어쓰는 걸 막는다.
 5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 엔티티들의 상태를 한 번만 모아둠 → (c) Playing 상태인 각 수신자에게, 모아둔 엔티티 상태 전부(자기 자신 포함)를 담은 `EntityState` 배치 패킷 1개를 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
 6. **연결 종료**: 클라이언트가 `quit`하거나 연결이 끊기면, 서버가 그 세션의 `EntityDespawn`을 남은 모든 세션에 브로드캐스트하고 세션을 제거.
