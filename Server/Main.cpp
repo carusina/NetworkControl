@@ -58,6 +58,7 @@ namespace {
 			std::cout << "  [" << entry.EntityId << "]"
 				<< " " << ToString(session->GetState())
 				<< " " << dataRateHz << "Hz"
+				<< " Sent: " << session->GetSentPacketCount()
 				<< " Pos(" << entry.PositionX << ", " << entry.PositionY << ")"
 				<< " Heading " << entry.Heading
 				<< " Vel(" << entry.VelocityX << ", " << entry.VelocityY << ")"

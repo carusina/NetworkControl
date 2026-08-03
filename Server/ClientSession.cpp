@@ -121,6 +121,10 @@ namespace Server {
 		return nextSequenceId_.fetch_add(1) + 1;
 	}
 
+	uint64_t ClientSession::GetSentPacketCount() const {
+		return nextSequenceId_;
+	}
+
 	bool ClientSession::TryGetUdpEndpoint(std::string& ip, uint16_t& port) const
 	{
 		std::lock_guard<std::mutex> lock(endpointMutex_);

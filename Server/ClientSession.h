@@ -31,6 +31,10 @@ namespace Server {
 			Common::DataRate GetDataRate() const;
 			uint64_t GetNextSequenceId();
 
+			// 지금까지 이 세션에게 보낸 EntityState 패킷 수 (nextSequenceId_를 증가시키지 않고 읽기만 함) -
+			// 클라이언트가 보고하는 수신 패킷 수와 콘솔에서 눈으로 비교해보는 용도
+			uint64_t GetSentPacketCount() const;
+
 			bool TryGetUdpEndpoint(std::string& ip, uint16_t& port) const;
 
 			Common::TcpSocket& GetControlSocket();

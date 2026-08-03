@@ -145,11 +145,14 @@ quit                          종료
 
 ```
 entities   접속된 모든 세션의 EntityId, 재생 상태(Playing/Paused/Stopped), 수신 주기(Hz),
-           위치/헤딩/속도를 실시간 갱신 화면으로 표시 (아무 키나 눌러 정지) - BuildEntityStateEntry를 그대로 재사용
+           송신 패킷 수, 위치/헤딩/속도를 실시간 갱신 화면으로 표시 (아무 키나 눌러 정지) -
+           BuildEntityStateEntry를 그대로 재사용
 quit       서버 종료
 ```
 
 `entities`는 클라이언트 REPL의 `stats`/`entities`와 같은 방식(`RunLiveView`)으로 0.5초마다 다시 그린다 — ANSI 커서 이동 시퀀스로 이전 프레임을 지우고 그 자리에 새로 찍으므로, 콘솔에서 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`을 켜둬야 한다(`EnableVirtualTerminalProcessing()`, `main()` 진입 직후 호출).
+
+**송신 패킷 수(`Sent: N`)**는 새 카운터를 따로 안 만들고, `UdpStreamingService`가 매 틱 `EntityState`를 보낼 때 이미 채우고 있는 `nextSequenceId_`(그 세션에게 보낸 패킷 순번)를 `ClientSession::GetSentPacketCount()`로 그냥 읽기만 한 값이다. 이 값을 GUI의 "총 수신 패킷" 통계랑 눈으로 비교하면(Pause/Stop으로 잠깐 멈춘 뒤 비교하면 더 안정적), 둘의 차이가 대략 유실되었거나 아직 도착하지 않은 패킷 수가 된다.
 
 ## 설정 파일
 
