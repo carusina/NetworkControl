@@ -45,7 +45,7 @@ Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 | ClientCore.Managed | `ManagedTypes.h` | `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 구조체를 그대로 옮긴 C# 바인딩용 POCO |
 | Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
 | Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz), 매 폴링마다 카메라 중심(내 위치) 갱신 |
-| Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 카메라(내 위치) 기준 상대 좌표를 캔버스 픽셀로 매핑(`WorldExtent` 밖은 clamp) |
+| Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 카메라(내 위치) 기준 상대 좌표를 메인 레이더 픽셀로, 월드 원점 기준 절대 좌표를 미니맵 픽셀로 매핑(둘 다 `WorldExtent` 밖은 clamp) |
 | Gui | `ViewModels/ViewModelBase.cs` | `INotifyPropertyChanged` 공통 구현 (`SetProperty`/`RaisePropertyChanged` 헬퍼) |
 | Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 레이더/HUD 스타일 Canvas, `MetricsSnapshot` 전체 필드를 보여주는 수신 통계 패널 |
 | Gui | `Views/InverseBooleanConverter.cs` | `bool` 반전 `IValueConverter` - 연결된 뒤 Host/Port 입력을 잠그는 데 씀 |
@@ -258,7 +258,7 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 
 ### MVVM 구조
 
-- **`ViewModels/MainViewModel.cs`**: `ManagedGameClient` 인스턴스 하나를 소유(`IDisposable`, 창 닫힐 때 `Dispose()`). Connect/Play/Pause/Stop/Reset/SetRate는 `RelayCommand`로 바인딩. Throttle/Yaw 프로퍼티는 슬라이더 드래그로 값이 바뀔 때마다(연속적으로) setter에서 바로 `SendControlInput`을 호출 — 키보드 실시간 홀드 방식이 아니라 "레버를 특정 값에 놓는" 개념.
+- **`ViewModels/MainViewModel.cs`**: `ManagedGameClient` 인스턴스 하나를 소유(`IDisposable`, 창 닫힐 때 `Dispose()`). Connect/Play/Pause/Stop/Reset/SetRate는 `RelayCommand`로 바인딩. Throttle/Yaw 프로퍼티는 슬라이더 드래그로 값이 바뀔 때마다(연속적으로) setter에서 바로 `SendControlInput`을 호출 — 키보드 실시간 홀드 방식이 아니라 "레버를 특정 값에 놓는" 개념. 서버가 현재 재생 상태/전송 주기를 알려주는 메시지가 없어서, `IsPlayActive`/`IsPauseActive`/`IsStopActive`/`IsRate30Active`/`IsRate60Active`는 버튼 커맨드가 성공했을 때 로컬에서 낙관적으로 갱신 — Reset은 서버 쪽 `SessionState`를 안 건드리므로 재생 상태 표시도 그대로 둠.
 - **`ViewModels/EntityViewModel.cs`**: 엔티티 1개의 표시 상태(위치/헤딩/캔버스 좌표). `PositionX/Y`는 `UpdateState`로, `CanvasLeft/Top`은 별도로 `UpdateCanvasPosition(cameraWorldX, cameraWorldY)`로 갱신 — 이 둘이 분리된 이유는 아래 "카메라가 나를 따라가게" 항목 참고.
 - **`ViewModels/ViewModelBase.cs`**: `INotifyPropertyChanged` 공통 구현. `SetProperty<T>(ref field, value)`가 값이 실제로 바뀌었을 때만 `PropertyChanged`를 올리고 `bool`을 반환 — 파생 클래스가 "이 프로퍼티가 바뀌면 저 계산 프로퍼티도 다시 알려야 함" 같은 연쇄 알림을 조건부로 걸 때 씀.
 - **`Views/MainWindow.xaml` (+ code-behind)**: 왼쪽에 연결/재생 제어/조종/통계 패널(`StackPanel`), 오른쪽에 레이더 뷰(`Canvas`). code-behind는 `MainViewModel`을 생성해서 `DataContext`에 꽂고, `Closing`에서 `Dispose()`를 부르는 것 말고는 로직이 없음(뷰 로직은 전부 XAML 바인딩/트리거).
@@ -276,6 +276,10 @@ Windows SDK의 `servprov.h`(COM)가 네이티브 `IServiceProvider`(포인터 `*
 **카메라 위치 추적**: 캔버스 중앙은 항상 "내 위치"다 — `EntityViewModel`이 처음엔 월드 원점(0,0) 기준 고정 좌표로 `CanvasLeft/Top`을 계산했는데(카메라가 헬기를 안 따라가는 고정 전체 맵), 나중에 "내가 항상 중심에 오게" 요구사항이 추가되면서 카메라 중심 자체가 매 틱 바뀌는 값(내 엔티티의 현재 위치)이 됐다. 그래서 좌표 계산을 엔티티 하나만으로 끝낼 수 없고, `MainViewModel.Poll()`이 이번 틱의 모든 엔티티 상태를 다 갱신한 *다음에* 내 엔티티의 위치를 알아내서, 그 값을 모든 `EntityViewModel.UpdateCanvasPosition(cameraX, cameraY, cameraHeading)`에 한 번씩 더 넘겨주는 2단계 구조가 됐다(아직 내 엔티티를 못 받았으면 카메라는 월드 원점/헤딩 0을 기준으로 함). `WorldExtent = ±300` 월드 단위가 640×640 캔버스에 매핑되고, 그 범위를 벗어나는 엔티티는 가장자리에 clamp된다.
 
 **카메라 헤딩 추적(heading-up)**: 처음엔 위치만 따라가고 축은 월드에 고정(north-up)이라, 내가 회전하면 화면에서도 내 마커가 그 자리에서 도는 것처럼 보여서 비직관적이었다. 실제 항공/헬기 HUD처럼 "내 기수 = 항상 화면 위"가 되도록, 카메라 기준 상대 위치·헤딩을 `delta = 90° - cameraHeading`만큼 같이 회전시킨다(`EntityViewModel.UpdateCanvasPosition`). 내 엔티티는 `heading_ == cameraHeading`이라 상대 회전이 매번 상쇄돼 화면 회전각이 항상 `-90°`(=위)로 고정되고, 다른 엔티티는 나에 대한 상대 방위로 표시된다. 링/격자/십자선 같은 배경은 **회전시키지 않는다** — 이 기준선들은 월드 방향이 아니라 "내 기수 기준 상대 방위(전방/후방/좌/우)"를 나타내는 화면 고정 눈금이라, 회전은 오직 엔티티 쪽 상대 방위 계산에만 있으면 된다(원래 배경도 같이 돌리려다가 되돌림 — 아래 삽질 기록 4번 참고).
+
+**좌표 표시(미니맵 + 텍스트)**: heading-up 레이더는 "내 기준 상대 위치"만 보여줘서, 절대 좌표가 얼마나 바뀌고 있는지는 감이 안 온다. 그래서 두 가지를 추가했다 — (1) 왼쪽 패널에 `MainViewModel.MyPositionText`로 내 엔티티의 현재 `PositionX/Y`를 그대로 숫자로 표시. (2) 메인 레이더 우하단에 회전·카메라 추적이 전혀 없는 150×150 미니맵을 인셋으로 얹음 — `EntityViewModel.MinimapLeft/Top`은 `UpdateCanvasPosition`과 별개로 항상 월드 원점(0,0) 기준 절대 좌표만 계산(`MinimapWorldExtent = ±400`). 메인 레이더용 회전 좌표와 미니맵용 절대 좌표를 같은 메서드에서 같이 계산해서, 폴링 한 번에 둘 다 갱신되게 함.
+
+미니맵 축은 `(X, -Y)`가 아니라 **`(-Y, -X)`**로 매핑했다 — 물리 모델의 `heading=0`(정지 상태 기본값)이 월드 +X 방향인데, 그대로 X를 가로/Y를 세로에 두면 미니맵의 "위"가 월드 +Y가 되어버려서, 원점에 가만히 있을 때부터 메인 레이더(heading-up, "위" = 내 헤딩 방향)의 "위"와 90도 어긋나 보이는 문제가 있었다. `(-Y, -X)`로 축을 바꿔서 "위"를 월드 +X(=기본 헤딩)에 맞추면, 최소한 시작 시점엔 두 화면의 "위"가 일치한다.
 
 ### 알려진 한계
 

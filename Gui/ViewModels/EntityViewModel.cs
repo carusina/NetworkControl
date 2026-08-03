@@ -12,6 +12,11 @@ namespace Gui.ViewModels
         public const double WorldExtent = 300.0; // 카메라 중심 기준 -300..+300 이 캔버스에 다 들어감
         private const double MarkerRadius = 8.0;
 
+        // 미니맵 - 회전도 카메라 추적도 없는, 월드 원점(0,0) 고정 절대 좌표 뷰
+        public const double MinimapSize = 150.0;
+        public const double MinimapWorldExtent = 400.0; // 원점 기준 -400..+400 이 미니맵에 다 들어감
+        private const double MinimapMarkerRadius = 3.0;
+
         private uint entityId_;
         private float positionX_;
         private float positionY_;
@@ -20,6 +25,8 @@ namespace Gui.ViewModels
         private double canvasLeft_;
         private double canvasTop_;
         private double headingDegrees_;
+        private double minimapLeft_;
+        private double minimapTop_;
 
         public uint EntityId
         {
@@ -61,6 +68,14 @@ namespace Gui.ViewModels
             // 내 엔티티는 heading_ == cameraHeading이라 매번 -90도로 고정되어 항상 위를 가리킨다.
             double effectiveHeadingAngle = heading_ + delta;
             SetProperty(ref headingDegrees_, -effectiveHeadingAngle * 180.0 / Math.PI, nameof(HeadingDegrees));
+
+            // 미니맵은 카메라 오프셋/회전을 전혀 안 받음 - 항상 월드 원점 기준 절대 좌표.
+            // 축은 일부러 (X,Y)를 그대로 안 쓰고 (-Y, -X)로 씀 - heading=0(정지 상태 기본 헤딩)이
+            // 월드 +X 방향인데, 그걸 "위"로 매핑해야 메인 레이더(heading-up)의 "위"와
+            // 시작 시점 기준이 맞음. 그대로 (X,-Y)를 썼으면 미니맵의 "위"가 월드 +Y가 되어,
+            // 처음 원점에 있을 때부터 두 화면의 "위"가 90도 어긋나 보였음.
+            SetProperty(ref minimapLeft_, ToMinimap(-positionY_) - MinimapMarkerRadius, nameof(MinimapLeft));
+            SetProperty(ref minimapTop_, ToMinimap(-positionX_) - MinimapMarkerRadius, nameof(MinimapTop));
         }
 
         public float PositionX => positionX_;
@@ -71,10 +86,19 @@ namespace Gui.ViewModels
         public double CanvasLeft => canvasLeft_;
         public double CanvasTop => canvasTop_;
 
+        public double MinimapLeft => minimapLeft_;
+        public double MinimapTop => minimapTop_;
+
         private static double ToCanvas(double relativeWorldCoordinate)
         {
             double normalized = (relativeWorldCoordinate + WorldExtent) / (WorldExtent * 2.0) * CanvasSize;
             return Math.Max(0.0, Math.Min(CanvasSize, normalized));
+        }
+
+        private static double ToMinimap(double worldCoordinate)
+        {
+            double normalized = (worldCoordinate + MinimapWorldExtent) / (MinimapWorldExtent * 2.0) * MinimapSize;
+            return Math.Max(0.0, Math.Min(MinimapSize, normalized));
         }
     }
 }

@@ -25,7 +25,15 @@ namespace Gui.ViewModels
         private double throttle_;
         private double yaw_;
         private string myEntityIdText_ = "-";
+        private string myPositionText_ = "-";
         private ManagedMetricsSnapshot metrics_;
+
+        // 서버가 현재 재생 상태/전송 주기를 알려주는 메시지가 없어서, 버튼을 누른 결과를
+        // 로컬에서 낙관적으로(성공 시 즉시) 추적함 - Play/Pause/Stop만 상태를 바꾸고,
+        // Reset은 서버 쪽 SessionState를 안 건드리므로 여기서도 상태를 안 바꿈.
+        private enum PlayState { Stopped, Playing, Paused }
+        private PlayState playState_ = PlayState.Stopped;
+        private bool isRate60_;
 
         public MainViewModel()
         {
@@ -33,12 +41,12 @@ namespace Gui.ViewModels
             timer_.Tick += (_, __) => Poll();
 
             ConnectCommand = new RelayCommand(_ => Connect(), _ => !IsConnected);
-            PlayCommand = new RelayCommand(_ => client_.Play(), _ => IsConnected);
-            PauseCommand = new RelayCommand(_ => client_.Pause(), _ => IsConnected);
-            StopCommand = new RelayCommand(_ => client_.Stop(), _ => IsConnected);
+            PlayCommand = new RelayCommand(_ => { if (client_.Play()) SetPlayState(PlayState.Playing); }, _ => IsConnected);
+            PauseCommand = new RelayCommand(_ => { if (client_.Pause()) SetPlayState(PlayState.Paused); }, _ => IsConnected);
+            StopCommand = new RelayCommand(_ => { if (client_.Stop()) SetPlayState(PlayState.Stopped); }, _ => IsConnected);
             ResetCommand = new RelayCommand(_ => client_.Reset(), _ => IsConnected);
-            SetRate30Command = new RelayCommand(_ => client_.SetRate30(), _ => IsConnected);
-            SetRate60Command = new RelayCommand(_ => client_.SetRate60(), _ => IsConnected);
+            SetRate30Command = new RelayCommand(_ => { if (client_.SetRate30()) SetDataRate60(false); }, _ => IsConnected);
+            SetRate60Command = new RelayCommand(_ => { if (client_.SetRate60()) SetDataRate60(true); }, _ => IsConnected);
         }
 
         public ObservableCollection<EntityViewModel> Entities { get; } = new ObservableCollection<EntityViewModel>();
@@ -85,6 +93,33 @@ namespace Gui.ViewModels
             private set => SetProperty(ref myEntityIdText_, value);
         }
 
+        public string MyPositionText
+        {
+            get => myPositionText_;
+            private set => SetProperty(ref myPositionText_, value);
+        }
+
+        public bool IsPlayActive => playState_ == PlayState.Playing;
+        public bool IsPauseActive => playState_ == PlayState.Paused;
+        public bool IsStopActive => playState_ == PlayState.Stopped;
+
+        public string PlayStateText
+        {
+            get
+            {
+                switch (playState_)
+                {
+                    case PlayState.Playing: return "Playing";
+                    case PlayState.Paused: return "Paused";
+                    default: return "Stopped";
+                }
+            }
+        }
+
+        public bool IsRate30Active => !isRate60_;
+        public bool IsRate60Active => isRate60_;
+        public string DataRateText => isRate60_ ? "60Hz" : "30Hz";
+
         public ManagedMetricsSnapshot Metrics
         {
             get => metrics_;
@@ -124,6 +159,23 @@ namespace Gui.ViewModels
         public RelayCommand SetRate30Command { get; }
         public RelayCommand SetRate60Command { get; }
 
+        private void SetPlayState(PlayState state)
+        {
+            playState_ = state;
+            RaisePropertyChanged(nameof(IsPlayActive));
+            RaisePropertyChanged(nameof(IsPauseActive));
+            RaisePropertyChanged(nameof(IsStopActive));
+            RaisePropertyChanged(nameof(PlayStateText));
+        }
+
+        private void SetDataRate60(bool isRate60)
+        {
+            isRate60_ = isRate60;
+            RaisePropertyChanged(nameof(IsRate30Active));
+            RaisePropertyChanged(nameof(IsRate60Active));
+            RaisePropertyChanged(nameof(DataRateText));
+        }
+
         private void SendControlInput()
         {
             if (IsConnected)
@@ -151,6 +203,9 @@ namespace Gui.ViewModels
 
             IsConnected = true;
             StatusMessage = "연결됨";
+            // 새 세션은 서버 기본값(Stopped, 30Hz)으로 시작하므로 로컬 표시도 맞춰줌
+            SetPlayState(PlayState.Stopped);
+            SetDataRate60(false);
             timer_.Start();
         }
 
@@ -186,7 +241,8 @@ namespace Gui.ViewModels
             double cameraX = 0.0;
             double cameraY = 0.0;
             double cameraHeading = 0.0;
-            if (myEntityId.HasValue && entityLookup_.TryGetValue(myEntityId.Value, out var myVm))
+            EntityViewModel myVm = null;
+            if (myEntityId.HasValue && entityLookup_.TryGetValue(myEntityId.Value, out myVm))
             {
                 cameraX = myVm.PositionX;
                 cameraY = myVm.PositionY;
@@ -198,6 +254,7 @@ namespace Gui.ViewModels
             }
 
             MyEntityIdText = myEntityId.HasValue ? myEntityId.Value.ToString() : "-";
+            MyPositionText = myVm != null ? $"X: {myVm.PositionX:F1}  Y: {myVm.PositionY:F1}" : "-";
             Metrics = client_.GetMetrics();
         }
 

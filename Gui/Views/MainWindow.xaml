@@ -47,21 +47,86 @@
                         <Run Text="내 엔티티 ID: "/>
                         <Run Text="{Binding MyEntityIdText, Mode=OneWay}"/>
                     </TextBlock>
+                    <TextBlock Margin="0,2,0,0" FontFamily="Consolas">
+                        <Run Text="좌표: "/>
+                        <Run Text="{Binding MyPositionText, Mode=OneWay}"/>
+                    </TextBlock>
                 </StackPanel>
             </GroupBox>
 
             <GroupBox Header="재생 제어" Margin="0,10,0,0">
                 <StackPanel Margin="4">
                     <UniformGrid Columns="2" Rows="2">
-                        <Button Content="Play" Command="{Binding PlayCommand}" Margin="2"/>
-                        <Button Content="Pause" Command="{Binding PauseCommand}" Margin="2"/>
-                        <Button Content="Stop" Command="{Binding StopCommand}" Margin="2"/>
+                        <Button Content="Play" Command="{Binding PlayCommand}" Margin="2">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPlayActive}" Value="True">
+                                            <Setter Property="Background" Value="LightGreen"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Pause" Command="{Binding PauseCommand}" Margin="2">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPauseActive}" Value="True">
+                                            <Setter Property="Background" Value="Orange"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Stop" Command="{Binding StopCommand}" Margin="2">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsStopActive}" Value="True">
+                                            <Setter Property="Background" Value="LightCoral"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                         <Button Content="Reset" Command="{Binding ResetCommand}" Margin="2"/>
                     </UniformGrid>
                     <UniformGrid Columns="2" Margin="0,4,0,0">
-                        <Button Content="30Hz" Command="{Binding SetRate30Command}" Margin="2"/>
-                        <Button Content="60Hz" Command="{Binding SetRate60Command}" Margin="2"/>
+                        <Button Content="30Hz" Command="{Binding SetRate30Command}" Margin="2">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRate30Active}" Value="True">
+                                            <Setter Property="Background" Value="LightSkyBlue"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="60Hz" Command="{Binding SetRate60Command}" Margin="2">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRate60Active}" Value="True">
+                                            <Setter Property="Background" Value="LightSkyBlue"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </UniformGrid>
+                    <TextBlock Margin="0,6,0,0" FontWeight="Bold">
+                        <Run Text="현재: "/>
+                        <Run Text="{Binding PlayStateText, Mode=OneWay}"/>
+                        <Run Text=" · "/>
+                        <Run Text="{Binding DataRateText, Mode=OneWay}"/>
+                    </TextBlock>
                 </StackPanel>
             </GroupBox>
 
@@ -136,6 +201,56 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Canvas>
+
+                <!-- 미니맵: 메인 레이더와 달리 회전/카메라 추적 없이 월드 원점(0,0) 기준
+                     절대 좌표를 그대로 보여줌 - "내가 원점에서 얼마나 떨어졌는지"를 감으로 보는 용도 -->
+                <Border Width="150" Height="150" Background="#DD05080A" BorderBrush="#FF00FFAA" BorderThickness="1"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,8,8">
+                    <Grid Width="150" Height="150" ClipToBounds="True">
+                        <Line X1="75" Y1="0" X2="75" Y2="150" Stroke="#5500FFAA" StrokeThickness="1"/>
+                        <Line X1="0" Y1="75" X2="150" Y2="75" Stroke="#5500FFAA" StrokeThickness="1"/>
+
+                        <!-- 200 월드 단위 간격 눈금 -->
+                        <Line X1="37.5" Y1="72" X2="37.5" Y2="78" Stroke="#5500FFAA" StrokeThickness="1"/>
+                        <Line X1="112.5" Y1="72" X2="112.5" Y2="78" Stroke="#5500FFAA" StrokeThickness="1"/>
+                        <Line X1="72" Y1="37.5" X2="78" Y2="37.5" Stroke="#5500FFAA" StrokeThickness="1"/>
+                        <Line X1="72" Y1="112.5" X2="78" Y2="112.5" Stroke="#5500FFAA" StrokeThickness="1"/>
+
+                        <TextBlock Text="±400" FontSize="9" Foreground="Gray" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,3,0"/>
+
+                        <Canvas>
+                            <ItemsControl ItemsSource="{Binding Entities}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding MinimapLeft}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding MinimapTop}"/>
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Ellipse Width="6" Height="6">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="Cyan"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMine}" Value="True">
+                                                            <Setter Property="Fill" Value="OrangeRed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Canvas>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 
