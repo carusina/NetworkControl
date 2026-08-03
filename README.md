@@ -30,7 +30,7 @@ Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 | Common | `SocketRuntime.h` / `.cpp` | `WSAStartup`/`WSACleanup` RAII |
 | Common | `HighResolutionTimer.h`, `TimerCompensator.h` | 단조 시계, 누적 오차 없는 주기 대기 |
 | Common | `Config.h` / `.cpp` | `ServerConfig`/`ClientConfig` + ini 파일 로더 |
-| Server | `Main.cpp` | 진입점 — 서비스 3개 조립 |
+| Server | `Main.cpp` | 진입점 — 서비스 3개 조립 + `entities` 콘솔 명령(세션별 물리 상태 확인) |
 | Server | `SessionManager.h` / `.cpp` | 접속 세션 저장소 (조회 병렬, 추가/삭제 배타적) |
 | Server | `ClientSession.h` / `.cpp` | 세션 1명의 제어 상태 + 엔티티(헬기) 시뮬레이션 상태 |
 | Server | `TcpControlServer.h` / `.cpp` | TCP 연결 수락, 명령 처리, Spawn/Despawn 브로드캐스트 |
@@ -107,7 +107,7 @@ enum class MessageType : uint8_t {
 3. **Play**: 클라이언트가 `play`를 보내면 그 세션의 `SessionState`가 `Playing`이 됨. Playing인 엔티티만 물리 시뮬레이션이 돌고 브로드캐스트를 주고받는다.
    - **Pause**: `SessionState`를 `Paused`로만 바꿈 — 위치/속도/통계 전부 그대로 유지, `Play`로 이어서 재개 가능.
    - **Reset**: 엔티티 위치/속도는 그대로 두고, **통계만** 초기화 — 서버 쪽 `EntityState` 시퀀스 번호(`nextSequenceId_`)를 0으로 되돌리고, 클라이언트도 함께 `MetricsCollector::Reset()`으로 유실률/지연 등 누적 통계를 지움.
-   - **Stop**: `SessionState`를 `Stopped`로 바꾸고, **통계와 엔티티 위치 둘 다** 초기화 — Reset이 하는 일 전부 + 위치/속도/헤딩/조종입력을 원점으로.
+   - **Stop**: `SessionState`를 `Stopped`로 바꾸고, **통계와 엔티티 위치 둘 다** 초기화 — Reset이 하는 일 전부 + 위치/속도/헤딩/조종입력을 원점으로. GUI의 `MainViewModel.Stop()`도 서버가 조종 입력을 0으로 되돌리는 것에 맞춰 Throttle/Yaw 슬라이더를 0으로 되돌리고 그 값을 다시 전송함.
 4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 자신의 `EntityId`(첫 Spawn으로 알게 된 값) + 보낼 때마다 증가하는 `SequenceId`를 함께 실어 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 `SessionManager::GetSession(EntityId)`로 바로 세션을 조회하고(O(1), 전체 세션을 순회하지 않음), 발신 IP:포트가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지만 확인(다른 세션 사칭 방지). `ClientSession::ApplyControlInput`은 `SequenceId`가 마지막으로 적용한 값보다 새로울 때만 반영해서, UDP 역전으로 오래된 입력이 늦게 도착해 최신 입력을 덮어쓰는 걸 막는다.
 5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 엔티티들의 상태를 한 번만 모아둠 → (c) Playing 상태인 각 수신자에게, 모아둔 엔티티 상태 전부(자기 자신 포함)를 담은 `EntityState` 배치 패킷 1개를 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
 6. **연결 종료**: 클라이언트가 `quit`하거나 연결이 끊기면, 서버가 그 세션의 `EntityDespawn`을 남은 모든 세션에 브로드캐스트하고 세션을 제거.
@@ -138,6 +138,18 @@ entities                      현재 알려진 엔티티(헬기) 목록과 위�
 stats                         유실률/간격/지연 통계를 실시간 갱신 화면으로 표시 (아무 키나 눌러 정지)
 quit                          종료
 ```
+
+## 서버 콘솔 명령어
+
+클라이언트는 네트워크로 받은(=유실/지연될 수 있는) 상태만 보는 반면, 서버는 `ClientSession`이 물리 계산에 실제로 쓰는 값을 직접 들여다볼 수 있다.
+
+```
+entities   접속된 모든 세션의 EntityId, 재생 상태(Playing/Paused/Stopped), 수신 주기(Hz),
+           위치/헤딩/속도를 실시간 갱신 화면으로 표시 (아무 키나 눌러 정지) - BuildEntityStateEntry를 그대로 재사용
+quit       서버 종료
+```
+
+`entities`는 클라이언트 REPL의 `stats`/`entities`와 같은 방식(`RunLiveView`)으로 0.5초마다 다시 그린다 — ANSI 커서 이동 시퀀스로 이전 프레임을 지우고 그 자리에 새로 찍으므로, 콘솔에서 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`을 켜둬야 한다(`EnableVirtualTerminalProcessing()`, `main()` 진입 직후 호출).
 
 ## 설정 파일
 

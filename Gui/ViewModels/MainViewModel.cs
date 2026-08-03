@@ -43,7 +43,7 @@ namespace Gui.ViewModels
             ConnectCommand = new RelayCommand(_ => Connect(), _ => !IsConnected);
             PlayCommand = new RelayCommand(_ => { if (client_.Play()) SetPlayState(PlayState.Playing); }, _ => IsConnected);
             PauseCommand = new RelayCommand(_ => { if (client_.Pause()) SetPlayState(PlayState.Paused); }, _ => IsConnected);
-            StopCommand = new RelayCommand(_ => { if (client_.Stop()) SetPlayState(PlayState.Stopped); }, _ => IsConnected);
+            StopCommand = new RelayCommand(_ => Stop(), _ => IsConnected);
             ResetCommand = new RelayCommand(_ => client_.Reset(), _ => IsConnected);
             SetRate30Command = new RelayCommand(_ => { if (client_.SetRate30()) SetDataRate60(false); }, _ => IsConnected);
             SetRate60Command = new RelayCommand(_ => { if (client_.SetRate60()) SetDataRate60(true); }, _ => IsConnected);
@@ -174,6 +174,20 @@ namespace Gui.ViewModels
             RaisePropertyChanged(nameof(IsRate30Active));
             RaisePropertyChanged(nameof(IsRate60Active));
             RaisePropertyChanged(nameof(DataRateText));
+        }
+
+        private void Stop()
+        {
+            if (!client_.Stop())
+            {
+                return;
+            }
+
+            SetPlayState(PlayState.Stopped);
+
+            // 서버도 Stop 시 조종 입력을 0으로 되돌리므로, 슬라이더도 맞춰서 0으로 되돌림
+            Throttle = 0.0;
+            Yaw = 0.0;
         }
 
         private void SendControlInput()
