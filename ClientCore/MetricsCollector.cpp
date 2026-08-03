@@ -72,7 +72,11 @@ namespace Client {
 		hasReceivedPacket_ = false;
 		missingSequenceIds_.clear();
 
-		expectedDataRate_ = Common::DataRate::Hz30;
+		// expectedDataRate_는 건드리지 않음 - 통계가 아니라 연결 설정(SetRate)이라, 서버의
+		// dataRate_와 마찬가지로 Reset/Stop이 아니라 SetRate 호출로만 바뀌어야 함.
+		// (예전엔 여기서 Hz30으로 강제로 되돌렸는데, 서버 쪽 dataRate_는 안 되돌리게 바뀌면서
+		// "서버는 60Hz로 계속 보내는데 클라이언트는 30Hz를 기대"하는 불일치가 생겨 지연 판정이
+		// 항상 통과하지 못하는 버그가 있었음)
 
 		hasTimingSample_ = false;
 		lastTimingSequenceId_ = 0;
