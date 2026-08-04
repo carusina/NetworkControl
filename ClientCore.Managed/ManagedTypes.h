@@ -22,6 +22,8 @@ namespace ClientCoreManaged {
 	public ref class ManagedMetricsSnapshot
 	{
 		public:
+			property System::Double ElapsedSeconds;
+
 			property System::UInt64 TotalReceivedCount;
 			property System::UInt64 LossCount;
 			property System::UInt64 OutOfOrderCount;

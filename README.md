@@ -91,7 +91,7 @@ enum class MessageType : uint8_t {
 | `RegisterUdpPort` | TCP | C→S | `Port` (uint16) — 이 클라이언트가 UDP를 수신할 포트 |
 | `Play` / `Pause` / `Reset` | TCP | C→S | 없음 (헤더만) |
 | `SetRate` | TCP | C→S | `DataRateHz` (uint32, 30 또는 60) |
-| `Stop` | TCP | C→S | `StopPayload` — 리셋되기 전 클라이언트의 마지막 `MetricsSnapshot`(수신량/유실/간격/지연 등 14개 필드, `Client::MetricsSnapshot`과 1:1 대응) |
+| `Stop` | TCP | C→S | `StopPayload` — 리셋되기 전 클라이언트의 마지막 `MetricsSnapshot`(경과 시간 + 수신량/유실/간격/지연 등 15개 필드, `Client::MetricsSnapshot`과 1:1 대응) |
 | `EntityControlInput` | UDP | C→S | `EntityId`, `SequenceId`, `Throttle`, `Yaw` (float, -1.0~1.0) |
 | `EntityState` | UDP | S→C | `SequenceId`, `Timestamp` (배치 전체에 1개씩) + `EntityCount`(uint16) + `EntityStateEntry`(`EntityId`, `PositionX/Y`, `Heading`, `VelocityX/Y`) × N개 |
 | `EntitySpawn` | TCP | S→C | `EntityId`, `Type`, `PositionX/Y`, `Heading` |

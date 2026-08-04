@@ -94,6 +94,8 @@ namespace Common {
     // 할 수 있어서(서버는 클라이언트가 실제로 뭘 받았는지 알 방법이 없음), 서버 콘솔에서 확인하려면
     // 클라이언트가 이 값을 Stop 메시지에 실어 보내야 함. Client::MetricsSnapshot과 필드가 1:1로 대응
     struct StopPayload {
+        double ElapsedSeconds = 0.0;
+
         uint64_t TotalReceivedCount = 0;
         uint64_t LossCount = 0;
         uint64_t OutOfOrderCount = 0;
@@ -123,7 +125,7 @@ namespace Common {
     constexpr size_t EntityStateEntrySize = sizeof(uint32_t) + sizeof(float) * 5;
     constexpr size_t EntitySpawnPayloadSize = sizeof(uint32_t) + sizeof(uint8_t) + sizeof(float) * 3;
     constexpr size_t EntityDespawnPayloadSize = sizeof(uint32_t);
-    constexpr size_t StopPayloadSize = sizeof(uint64_t) * 14;
+    constexpr size_t StopPayloadSize = sizeof(uint64_t) * 15;
 
     void SerializeHeader(BinaryWriter& writer, MessageType type);
     bool TryDeserializeHeader(BinaryReader& reader, MessageType& type);

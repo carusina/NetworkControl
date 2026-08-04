@@ -19,6 +19,7 @@ namespace Client {
 		{
 			highestSequenceId_ = sequenceId;
 			hasReceivedPacket_ = true;
+			statsStartTime_ = receivedTime;
 
 			lastTimingSequenceId_ = sequenceId;
 			lastReceiveTime_ = receivedTime;
@@ -55,9 +56,30 @@ namespace Client {
 		hasTimingSample_ = false;
 	}
 
-	void MetricsCollector::ResetReceiveTiming()
+	void MetricsCollector::OnPlay()
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
+
+		if (isPaused_)
+		{
+			accumulatedPausedSeconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - pauseStartTime_).count();
+			isPaused_ = false;
+		}
+
+		hasTimingSample_ = false;
+	}
+
+	void MetricsCollector::OnPause()
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		// 아직 첫 패킷도 못 받은 상태에서의 Pause는 경과 시간 계산에 영향이 없으므로 무시
+		if (hasReceivedPacket_ && !isPaused_)
+		{
+			pauseStartTime_ = std::chrono::steady_clock::now();
+			isPaused_ = true;
+		}
+
 		hasTimingSample_ = false;
 	}
 
@@ -70,6 +92,10 @@ namespace Client {
 		confirmedLostCount_ = 0;
 		highestSequenceId_ = 0;
 		hasReceivedPacket_ = false;
+		statsStartTime_ = {};
+		isPaused_ = false;
+		pauseStartTime_ = {};
+		accumulatedPausedSeconds_ = 0.0;
 		missingSequenceIds_.clear();
 
 		// expectedDataRate_는 건드리지 않음 - 통계가 아니라 연결 설정(SetRate)이라, 서버의
@@ -101,6 +127,18 @@ namespace Client {
 		std::lock_guard<std::mutex> lock(mutex_);
 
 		MetricsSnapshot snapshot;
+
+		if (hasReceivedPacket_)
+		{
+			const auto now = std::chrono::steady_clock::now();
+
+			double pausedSeconds = accumulatedPausedSeconds_;
+			if (isPaused_) {
+				pausedSeconds += std::chrono::duration<double>(now - pauseStartTime_).count();
+			}
+
+			snapshot.ElapsedSeconds = std::chrono::duration<double>(now - statsStartTime_).count() - pausedSeconds;
+		}
 
 		snapshot.TotalReceivedCount = totalReceivedCount_;
 		snapshot.LossCount = confirmedLostCount_ + static_cast<uint64_t>(missingSequenceIds_.size());

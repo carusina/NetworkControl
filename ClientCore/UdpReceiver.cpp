@@ -86,8 +86,12 @@ namespace Client {
 		metricsCollector_.SetExpectedDataRate(dataRate);
 	}
 
-	void UdpReceiver::ResetReceiveTiming() {
-		metricsCollector_.ResetReceiveTiming();
+	void UdpReceiver::OnPlay() {
+		metricsCollector_.OnPlay();
+	}
+
+	void UdpReceiver::OnPause() {
+		metricsCollector_.OnPause();
 	}
 
 	bool UdpReceiver::SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, uint32_t entityId, float throttle, float yaw)

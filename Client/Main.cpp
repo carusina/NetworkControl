@@ -34,6 +34,8 @@ namespace {
 	int PrintMetrics(const Client::MetricsSnapshot& metrics)
 	{
 		std::cout << std::fixed << std::setprecision(2);
+		std::cout << "Elapsed: " << metrics.ElapsedSeconds << "s" << std::endl;
+
 		std::cout << "Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount << ", Loss Rate: " << metrics.LossRate << "%" << ", Out of Order: " << metrics.OutOfOrderCount << std::endl;
 
 		std::cout << "Average Interval: " << metrics.AverageReceiveIntervalMilliseconds << "ms" << ", Max Interval: " << metrics.MaxReceiveIntervalMilliseconds << "ms" << ", Average Deviation: " << metrics.AverageIntervalDeviationMilliseconds << "ms" << std::endl;
@@ -42,7 +44,7 @@ namespace {
 
 		std::cout << "Latency: avg " << metrics.AverageLatencyMilliseconds << "ms, min " << metrics.MinLatencyMilliseconds << "ms, max " << metrics.MaxLatencyMilliseconds << "ms (" << metrics.LatencySampleCount << " samples, same-machine only)" << std::endl;
 
-		return 4;
+		return 5;
 	}
 
 	// 알려진 엔티티 수에 따라 줄 수가 매번 달라지므로, 실제 출력한 줄 수를 반환

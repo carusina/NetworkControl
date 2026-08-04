@@ -79,7 +79,7 @@ namespace Client {
 			return false;
 		}
 
-		udpReceiver_.ResetReceiveTiming();
+		udpReceiver_.OnPlay();
 		return true;
 	}
 
@@ -89,7 +89,7 @@ namespace Client {
 			return false;
 		}
 
-		udpReceiver_.ResetReceiveTiming();
+		udpReceiver_.OnPause();
 		return true;
 	}
 
@@ -100,7 +100,7 @@ namespace Client {
 			return false;
 		}
 
-		// Stop은 서버 쪽 엔티티/시퀀스가 전부 초기화되므로, 통계도 전부 초기화(ResetReceiveTiming보다 강함)
+		// Stop은 서버 쪽 엔티티/시퀀스가 전부 초기화되므로, 통계도 전부 초기화(OnPlay/OnPause보다 강함)
 		udpReceiver_.ResetMetrics();
 		return true;
 	}
@@ -196,6 +196,7 @@ namespace Client {
 		Common::SerializeHeader(writer, Common::MessageType::Stop);
 
 		Common::StopPayload payload;
+		payload.ElapsedSeconds = metrics.ElapsedSeconds;
 		payload.TotalReceivedCount = metrics.TotalReceivedCount;
 		payload.LossCount = metrics.LossCount;
 		payload.OutOfOrderCount = metrics.OutOfOrderCount;

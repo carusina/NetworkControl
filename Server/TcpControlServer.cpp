@@ -240,6 +240,7 @@ namespace Server {
 		std::cout << std::fixed << std::setprecision(2);
 
 		std::cout << "[Session " << session.GetSessionId() << "] Stop - client MetricsSnapshot:" << std::endl;
+		std::cout << "  Elapsed: " << metrics.ElapsedSeconds << "s" << std::endl;
 		std::cout << "  Sent to this client: " << session.GetSentPacketCount() << " packets" << std::endl;
 		std::cout << "  Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount
 			<< ", Loss Rate: " << metrics.LossRate << "%, Out of Order: " << metrics.OutOfOrderCount << std::endl;

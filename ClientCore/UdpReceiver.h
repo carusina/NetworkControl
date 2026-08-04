@@ -31,8 +31,9 @@ namespace Client {
 			// 현재 서버 전송률을 수신 간격 측정 기준으로 사용
 			void SetExpectedDataRate(Common::DataRate dataRate);
 
-			// Pause, Stop, Play 이후 오래된 수신 시각을 기준으로 삼지 않음
-			void ResetReceiveTiming();
+			// Play/Pause 전환 시 호출 - MetricsCollector::OnPlay/OnPause로 그대로 전달
+			void OnPlay();
+			void OnPause();
 
 			// 조종 입력을 서버로 전송 - Start()에서 바인드해둔 소켓을 그대로 사용
 			bool SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, uint32_t entityId, float throttle, float yaw);

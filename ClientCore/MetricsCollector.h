@@ -11,6 +11,10 @@ namespace Client {
 
 	// UDP 수신 품질 통계
 	struct MetricsSnapshot {
+		// 첫 패킷을 받은 시점부터 지금까지 경과한 시간, Pause로 멈춰있던 구간은 제외 -
+		// Reset()/Stop()으로 통계가 지워지면 다음 첫 패킷을 받을 때 다시 0부터 시작
+		double ElapsedSeconds = 0.0;
+
 		uint64_t TotalReceivedCount = 0;
 		uint64_t LossCount = 0;
 		uint64_t OutOfOrderCount = 0;
@@ -40,8 +44,11 @@ namespace Client {
 		// 전송률 변경 후 새 기준으로 간격을 계산
 		void SetExpectedDataRate(Common::DataRate dataRate);
 
-		// Pause, Play 이후 이전 수신 시각을 기준으로 삼지 않음 (Stop/Reset은 ResetMetrics를 씀)
-		void ResetReceiveTiming();
+		// Play/Pause 전환 시 호출 (Stop/Reset은 ResetMetrics를 씀).
+		// 이전 수신 시각을 간격 계산 기준으로 삼지 않게 하고, Pause로 멈춰있던 구간을
+		// ElapsedSeconds 계산에서 빼기 위해 일시정지 시작/종료 시각을 기록
+		void OnPlay();
+		void OnPause();
 
 		void Reset();
 		MetricsSnapshot GetSnapshot() const;
@@ -65,6 +72,11 @@ namespace Client {
 		uint64_t confirmedLostCount_ = 0;
 		uint64_t highestSequenceId_ = 0;
 		bool hasReceivedPacket_ = false;
+		std::chrono::steady_clock::time_point statsStartTime_{};
+
+		bool isPaused_ = false;
+		std::chrono::steady_clock::time_point pauseStartTime_{};
+		double accumulatedPausedSeconds_ = 0.0;
 
 		std::unordered_set<uint64_t> missingSequenceIds_;
 		

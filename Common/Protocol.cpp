@@ -134,6 +134,8 @@ namespace Common {
     }
 
     void SerializeStop(BinaryWriter& writer, const StopPayload& payload) {
+        writer.WriteDouble(payload.ElapsedSeconds);
+
         writer.WriteUInt64(payload.TotalReceivedCount);
         writer.WriteUInt64(payload.LossCount);
         writer.WriteUInt64(payload.OutOfOrderCount);
@@ -154,7 +156,8 @@ namespace Common {
     }
 
     bool TryDeserializeStop(BinaryReader& reader, StopPayload& payload) {
-        return reader.TryReadUInt64(payload.TotalReceivedCount)
+        return reader.TryReadDouble(payload.ElapsedSeconds)
+            && reader.TryReadUInt64(payload.TotalReceivedCount)
             && reader.TryReadUInt64(payload.LossCount)
             && reader.TryReadUInt64(payload.OutOfOrderCount)
             && reader.TryReadDouble(payload.LossRate)

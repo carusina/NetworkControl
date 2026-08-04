@@ -259,6 +259,7 @@
 
             <GroupBox Header="수신량 / 유실">
                 <StackPanel Margin="4">
+                    <TextBlock Text="{Binding Metrics.ElapsedSeconds, StringFormat='경과 시간: {0:F1}초'}"/>
                     <TextBlock Text="{Binding Metrics.TotalReceivedCount, StringFormat='총 수신 패킷: {0}'}"/>
                     <TextBlock Text="{Binding Metrics.LossCount, StringFormat='유실 패킷: {0}'}"/>
                     <TextBlock Text="{Binding Metrics.LossRate, StringFormat='유실률: {0:F2}%'}"/>

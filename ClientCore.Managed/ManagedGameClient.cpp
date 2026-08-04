@@ -106,6 +106,7 @@ namespace ClientCoreManaged {
 		const Client::MetricsSnapshot snapshot = native_->GetMetrics();
 
 		auto managed = gcnew ManagedMetricsSnapshot();
+		managed->ElapsedSeconds = snapshot.ElapsedSeconds;
 		managed->TotalReceivedCount = snapshot.TotalReceivedCount;
 		managed->LossCount = snapshot.LossCount;
 		managed->OutOfOrderCount = snapshot.OutOfOrderCount;
