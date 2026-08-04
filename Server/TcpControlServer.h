@@ -31,6 +31,10 @@ namespace Server {
 
 			bool RegisterUdpEndpoint(ClientSession& session, const Common::Ipv4Endpoint& clientEndpoint, uint16_t udpPort) const;
 
+			// Stop 처리 직전에 호출 - session.GetSentPacketCount()가 session.Stop()으로 리셋되기 전에
+			// 클라이언트가 보낸 마지막 MetricsSnapshot(StopPayload)과 함께 콘솔에 출력
+			void PrintClientMetricsSnapshot(const ClientSession& session, const Common::StopPayload& metrics) const;
+
 			void SendEntitySpawn(ClientSession& recipient, const Common::EntitySpawnPayload& payload) const;
 			void SendEntityDespawn(ClientSession& recipient, const Common::EntityDespawnPayload& payload) const;
 

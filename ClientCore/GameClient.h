@@ -52,6 +52,7 @@ namespace Client {
 			bool SendHeaderOnly(Common::MessageType type);
 			bool SendRegisterUdpPort(uint16_t port);
 			bool SendSetRate(uint32_t dataRateHz);
+			bool SendStop(const MetricsSnapshot& metrics);
 
 		private:
 			EntityWorld entityWorld_;

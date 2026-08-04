@@ -34,6 +34,12 @@ namespace Common {
         WriteUInt32(bits);
     }
 
+    void BinaryWriter::WriteDouble(double value) {
+        uint64_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        WriteUInt64(bits);
+    }
+
     const std::vector<uint8_t>& BinaryWriter::Data() const {
         return buffer_;
     }
@@ -94,6 +100,16 @@ namespace Common {
     bool BinaryReader::TryReadFloat(float& value) {
         uint32_t bits = 0;
         if (!TryReadUInt32(bits)) {
+            return false;
+        }
+
+        std::memcpy(&value, &bits, sizeof(value));
+        return true;
+    }
+
+    bool BinaryReader::TryReadDouble(double& value) {
+        uint64_t bits = 0;
+        if (!TryReadUInt64(bits)) {
             return false;
         }
 

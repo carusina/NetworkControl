@@ -3,6 +3,7 @@
 #include "../Common/BinarySerializer.h"
 
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -172,7 +173,31 @@ namespace Server {
 			return true;
 		}
 
-		// 여기부터는 Payload 없는 명령(Play/Pause/Stop/Reset)
+		if (type == Common::MessageType::Stop)
+		{
+			uint8_t payloadBytes[Common::StopPayloadSize]{};
+			if (!controlSocket.ReceiveAll(payloadBytes, sizeof(payloadBytes))) {
+				return false;
+			}
+
+			if (!isUdpEndpointRegistered) {
+				std::cout << "[Session " << session.GetSessionId() << "] Command ignored: UDP port is not registered." << std::endl;
+				return true;
+			}
+
+			Common::StopPayload payload{};
+			Common::BinaryReader reader(payloadBytes, sizeof(payloadBytes));
+			if (!Common::TryDeserializeStop(reader, payload)) {
+				return false;
+			}
+
+			// session.Stop()이 nextSequenceId_를 0으로 되돌리므로, GetSentPacketCount()는 그 전에 출력
+			PrintClientMetricsSnapshot(session, payload);
+			session.Stop();
+			return true;
+		}
+
+		// 여기부터는 Payload 없는 명령(Play/Pause/Reset)
 		if (!isUdpEndpointRegistered) {
 			std::cout << "[Session " << session.GetSessionId() << "] Command ignored: UDP port is not registered." << std::endl;
 			return true;
@@ -186,10 +211,6 @@ namespace Server {
 
 			case Common::MessageType::Pause:
 				session.Pause();
-				return true;
-
-			case Common::MessageType::Stop:
-				session.Stop();
 				return true;
 
 			case Common::MessageType::Reset:
@@ -212,6 +233,22 @@ namespace Server {
 
 		session.RegisterUdpEndpoint(clientEndpoint.GetIpAddress(), udpPort);
 		return true;
+	}
+
+	void TcpControlServer::PrintClientMetricsSnapshot(const ClientSession& session, const Common::StopPayload& metrics) const
+	{
+		std::cout << std::fixed << std::setprecision(2);
+
+		std::cout << "[Session " << session.GetSessionId() << "] Stop - client MetricsSnapshot:" << std::endl;
+		std::cout << "  Sent to this client: " << session.GetSentPacketCount() << " packets" << std::endl;
+		std::cout << "  Received: " << metrics.TotalReceivedCount << ", Loss: " << metrics.LossCount
+			<< ", Loss Rate: " << metrics.LossRate << "%, Out of Order: " << metrics.OutOfOrderCount << std::endl;
+		std::cout << "  Average Interval: " << metrics.AverageReceiveIntervalMilliseconds << "ms, Max Interval: "
+			<< metrics.MaxReceiveIntervalMilliseconds << "ms, Average Deviation: " << metrics.AverageIntervalDeviationMilliseconds << "ms" << std::endl;
+		std::cout << "  Delayed Packets: " << metrics.DelayedPacketCount << " / " << metrics.IntervalSampleCount
+			<< ", Delayed Packet Rate: " << metrics.DelayedPacketRate << "%" << std::endl;
+		std::cout << "  Latency: avg " << metrics.AverageLatencyMilliseconds << "ms, min " << metrics.MinLatencyMilliseconds
+			<< "ms, max " << metrics.MaxLatencyMilliseconds << "ms (" << metrics.LatencySampleCount << " samples)" << std::endl;
 	}
 
 	void TcpControlServer::SendEntitySpawn(ClientSession& recipient, const Common::EntitySpawnPayload& payload) const

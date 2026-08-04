@@ -95,7 +95,8 @@ namespace Client {
 
 	bool GameClient::Stop()
 	{
-		if (!isConnected_ || !SendHeaderOnly(Common::MessageType::Stop)) {
+		// 리셋되기 전의 마지막 통계를 서버에 실어 보냄 (서버는 이 값을 스스로 계산할 수 없음)
+		if (!isConnected_ || !SendStop(udpReceiver_.GetMetrics())) {
 			return false;
 		}
 
@@ -185,6 +186,35 @@ namespace Client {
 		Common::SetRatePayload payload;
 		payload.DataRateHz = dataRateHz;
 		Common::SerializeSetRate(writer, payload);
+
+		return SendMessage(writer);
+	}
+
+	bool GameClient::SendStop(const MetricsSnapshot& metrics)
+	{
+		Common::BinaryWriter writer;
+		Common::SerializeHeader(writer, Common::MessageType::Stop);
+
+		Common::StopPayload payload;
+		payload.TotalReceivedCount = metrics.TotalReceivedCount;
+		payload.LossCount = metrics.LossCount;
+		payload.OutOfOrderCount = metrics.OutOfOrderCount;
+		payload.LossRate = metrics.LossRate;
+
+		payload.IntervalSampleCount = metrics.IntervalSampleCount;
+		payload.AverageReceiveIntervalMilliseconds = metrics.AverageReceiveIntervalMilliseconds;
+		payload.MaxReceiveIntervalMilliseconds = metrics.MaxReceiveIntervalMilliseconds;
+		payload.AverageIntervalDeviationMilliseconds = metrics.AverageIntervalDeviationMilliseconds;
+
+		payload.DelayedPacketCount = metrics.DelayedPacketCount;
+		payload.DelayedPacketRate = metrics.DelayedPacketRate;
+
+		payload.LatencySampleCount = metrics.LatencySampleCount;
+		payload.AverageLatencyMilliseconds = metrics.AverageLatencyMilliseconds;
+		payload.MinLatencyMilliseconds = metrics.MinLatencyMilliseconds;
+		payload.MaxLatencyMilliseconds = metrics.MaxLatencyMilliseconds;
+
+		Common::SerializeStop(writer, payload);
 
 		return SendMessage(writer);
 	}

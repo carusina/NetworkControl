@@ -14,6 +14,7 @@ namespace Common {
             void WriteUInt32(uint32_t value);
             void WriteUInt64(uint64_t value);
             void WriteFloat(float value);
+            void WriteDouble(double value);
 
             const std::vector<uint8_t>& Data() const;
 
@@ -32,6 +33,7 @@ namespace Common {
             bool TryReadUInt32(uint32_t& value);
             bool TryReadUInt64(uint64_t& value);
             bool TryReadFloat(float& value);
+            bool TryReadDouble(double& value);
 
         private:
             bool HasRemaining(size_t count) const;

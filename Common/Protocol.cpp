@@ -133,4 +133,41 @@ namespace Common {
         return reader.TryReadUInt32(payload.EntityId);
     }
 
+    void SerializeStop(BinaryWriter& writer, const StopPayload& payload) {
+        writer.WriteUInt64(payload.TotalReceivedCount);
+        writer.WriteUInt64(payload.LossCount);
+        writer.WriteUInt64(payload.OutOfOrderCount);
+        writer.WriteDouble(payload.LossRate);
+
+        writer.WriteUInt64(payload.IntervalSampleCount);
+        writer.WriteDouble(payload.AverageReceiveIntervalMilliseconds);
+        writer.WriteDouble(payload.MaxReceiveIntervalMilliseconds);
+        writer.WriteDouble(payload.AverageIntervalDeviationMilliseconds);
+
+        writer.WriteUInt64(payload.DelayedPacketCount);
+        writer.WriteDouble(payload.DelayedPacketRate);
+
+        writer.WriteUInt64(payload.LatencySampleCount);
+        writer.WriteDouble(payload.AverageLatencyMilliseconds);
+        writer.WriteDouble(payload.MinLatencyMilliseconds);
+        writer.WriteDouble(payload.MaxLatencyMilliseconds);
+    }
+
+    bool TryDeserializeStop(BinaryReader& reader, StopPayload& payload) {
+        return reader.TryReadUInt64(payload.TotalReceivedCount)
+            && reader.TryReadUInt64(payload.LossCount)
+            && reader.TryReadUInt64(payload.OutOfOrderCount)
+            && reader.TryReadDouble(payload.LossRate)
+            && reader.TryReadUInt64(payload.IntervalSampleCount)
+            && reader.TryReadDouble(payload.AverageReceiveIntervalMilliseconds)
+            && reader.TryReadDouble(payload.MaxReceiveIntervalMilliseconds)
+            && reader.TryReadDouble(payload.AverageIntervalDeviationMilliseconds)
+            && reader.TryReadUInt64(payload.DelayedPacketCount)
+            && reader.TryReadDouble(payload.DelayedPacketRate)
+            && reader.TryReadUInt64(payload.LatencySampleCount)
+            && reader.TryReadDouble(payload.AverageLatencyMilliseconds)
+            && reader.TryReadDouble(payload.MinLatencyMilliseconds)
+            && reader.TryReadDouble(payload.MaxLatencyMilliseconds);
+    }
+
 } // namespace Common

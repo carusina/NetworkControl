@@ -90,7 +90,30 @@ namespace Common {
         uint32_t EntityId = 0;
     };
 
-    // Play/Pause/Stop/Reset은 헤더(MessageType)만 있고 별도 Payload가 없음
+    // Stop 시점에 클라이언트가 보고하는 마지막 수신 통계 - MetricsSnapshot 계산은 클라이언트만
+    // 할 수 있어서(서버는 클라이언트가 실제로 뭘 받았는지 알 방법이 없음), 서버 콘솔에서 확인하려면
+    // 클라이언트가 이 값을 Stop 메시지에 실어 보내야 함. Client::MetricsSnapshot과 필드가 1:1로 대응
+    struct StopPayload {
+        uint64_t TotalReceivedCount = 0;
+        uint64_t LossCount = 0;
+        uint64_t OutOfOrderCount = 0;
+        double LossRate = 0.0;
+
+        uint64_t IntervalSampleCount = 0;
+        double AverageReceiveIntervalMilliseconds = 0.0;
+        double MaxReceiveIntervalMilliseconds = 0.0;
+        double AverageIntervalDeviationMilliseconds = 0.0;
+
+        uint64_t DelayedPacketCount = 0;
+        double DelayedPacketRate = 0.0;
+
+        uint64_t LatencySampleCount = 0;
+        double AverageLatencyMilliseconds = 0.0;
+        double MinLatencyMilliseconds = 0.0;
+        double MaxLatencyMilliseconds = 0.0;
+    };
+
+    // Play/Pause/Reset은 헤더(MessageType)만 있고 별도 Payload가 없음. Stop은 StopPayload를 실어 보냄
 
     // 각 Payload의 직렬화된 바이트 수 - TCP/UDP 수신 측에서 헤더 다음 몇 바이트를 읽어야 하는지 알려줌
     // (struct의 sizeof는 컴파일러 패딩이 낄 수 있어 실제 전송 크기와 다를 수 있으므로 쓰지 않음)
@@ -100,6 +123,7 @@ namespace Common {
     constexpr size_t EntityStateEntrySize = sizeof(uint32_t) + sizeof(float) * 5;
     constexpr size_t EntitySpawnPayloadSize = sizeof(uint32_t) + sizeof(uint8_t) + sizeof(float) * 3;
     constexpr size_t EntityDespawnPayloadSize = sizeof(uint32_t);
+    constexpr size_t StopPayloadSize = sizeof(uint64_t) * 14;
 
     void SerializeHeader(BinaryWriter& writer, MessageType type);
     bool TryDeserializeHeader(BinaryReader& reader, MessageType& type);
@@ -125,5 +149,8 @@ namespace Common {
 
     void SerializeEntityDespawn(BinaryWriter& writer, const EntityDespawnPayload& payload);
     bool TryDeserializeEntityDespawn(BinaryReader& reader, EntityDespawnPayload& payload);
+
+    void SerializeStop(BinaryWriter& writer, const StopPayload& payload);
+    bool TryDeserializeStop(BinaryReader& reader, StopPayload& payload);
 
 } // namespace Common
