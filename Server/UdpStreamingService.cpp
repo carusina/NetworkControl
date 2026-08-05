@@ -91,6 +91,20 @@ namespace Server {
 
 			const uint64_t timestamp = Common::HighResolutionTimer::GetMicroseconds();
 
+			// 이번 틱의 모든 수신자는 Timestamp/Entities가 동일하므로 한 번만 직렬화해두고,
+			// 수신자마다 다른 SequenceId만 PatchEntityStateSequenceId로 자리에서 덮어써서 보냄 -
+			// 수신자마다 전체를 다시 직렬화/복사하던 O(수신자 수 x 엔티티 수) 비용을 없앰
+			Common::EntityStateBatchPayload batch;
+			batch.SequenceId = 0; // 수신자별로 아래에서 patch됨
+			batch.Timestamp = timestamp;
+			batch.Entities = entries;
+
+			Common::BinaryWriter writer;
+			Common::SerializeHeader(writer, Common::MessageType::EntityState);
+			Common::SerializeEntityStateBatch(writer, batch);
+
+			std::vector<uint8_t> packet = writer.Data();
+
 			// 3) Playing 상태인 각 수신자에게 모든 엔티티 상태를 담은 패킷 하나만 전송(수신자당 패킷 1개)
 			for (const auto& recipient : sessions)
 			{
@@ -114,19 +128,11 @@ namespace Server {
 					continue;
 				}
 
-				Common::EntityStateBatchPayload batch;
-				batch.SequenceId = recipient->GetNextSequenceId();
-				batch.Timestamp = timestamp;
-				batch.Entities = entries;
+				Common::PatchEntityStateSequenceId(packet, recipient->GetNextSequenceId());
 
-				Common::BinaryWriter writer;
-				Common::SerializeHeader(writer, Common::MessageType::EntityState);
-				Common::SerializeEntityStateBatch(writer, batch);
+				const int sent = udpSocket_.SendTo(packet.data(), static_cast<int>(packet.size()), endpoint);
 
-				const auto& data = writer.Data();
-				const int sent = udpSocket_.SendTo(data.data(), static_cast<int>(data.size()), endpoint);
-
-				if (sent != static_cast<int>(data.size())) {
+				if (sent != static_cast<int>(packet.size())) {
 					std::cerr << "[Session " << recipient->GetSessionId() << "] UDP send failed: " << Common::UdpSocket::GetLastError() << std::endl;
 				}
 			}

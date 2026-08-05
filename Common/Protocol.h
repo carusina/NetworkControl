@@ -155,4 +155,10 @@ namespace Common {
     void SerializeStop(BinaryWriter& writer, const StopPayload& payload);
     bool TryDeserializeStop(BinaryReader& reader, StopPayload& payload);
 
+    // EntityState 배치에서 SequenceId만 자리에서 덮어씀 - 같은 틱의 모든 수신자는 Timestamp/Entities가
+    // 동일하므로 SerializeEntityStateBatch로 한 번만 직렬화해두고, 수신자마다 다른 SequenceId만 이
+    // 함수로 patch하면 수신자 수만큼 매번 전체를 다시 직렬화하는 비용(수신자 수 x 엔티티 수)을 피할 수 있음.
+    // serializedPacket은 SerializeHeader(EntityState) 다음에 SerializeEntityStateBatch를 호출한 결과여야 함
+    void PatchEntityStateSequenceId(std::vector<uint8_t>& serializedPacket, uint64_t sequenceId);
+
 } // namespace Common

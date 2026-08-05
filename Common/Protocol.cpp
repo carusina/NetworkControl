@@ -1,6 +1,9 @@
 #include "Protocol.h"
 
 #include "BinarySerializer.h"
+#include "ByteOrder.h"
+
+#include <cstring>
 
 namespace Common {
 
@@ -171,6 +174,19 @@ namespace Common {
             && reader.TryReadDouble(payload.AverageLatencyMilliseconds)
             && reader.TryReadDouble(payload.MinLatencyMilliseconds)
             && reader.TryReadDouble(payload.MaxLatencyMilliseconds);
+    }
+
+    void PatchEntityStateSequenceId(std::vector<uint8_t>& serializedPacket, uint64_t sequenceId) {
+        // 레이아웃: MessageType 헤더(1바이트) 바로 다음이 SequenceId(8바이트, network order) -
+        // SerializeEntityStateBatch가 SequenceId를 가장 먼저 쓰는 것과 짝이 맞아야 함
+        constexpr size_t sequenceIdOffset = sizeof(uint8_t);
+
+        if (serializedPacket.size() < sequenceIdOffset + sizeof(uint64_t)) {
+            return;
+        }
+
+        const uint64_t networkValue = HostToNetwork64(sequenceId);
+        std::memcpy(serializedPacket.data() + sequenceIdOffset, &networkValue, sizeof(networkValue));
     }
 
 } // namespace Common

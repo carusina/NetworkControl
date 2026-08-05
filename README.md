@@ -110,7 +110,7 @@ enum class MessageType : uint8_t {
    - **Reset**: 엔티티 위치/속도는 그대로 두고, **통계만** 초기화 — 서버 쪽 `EntityState` 시퀀스 번호(`nextSequenceId_`)를 0으로 되돌리고, 클라이언트도 함께 `MetricsCollector::Reset()`으로 유실률/지연 등 누적 통계를 지움.
    - **Stop**: `SessionState`를 `Stopped`로 바꾸고, **통계와 엔티티 위치 둘 다** 초기화 — Reset이 하는 일 전부 + 위치/속도/헤딩/조종입력을 원점으로. GUI의 `MainViewModel.Stop()`도 서버가 조종 입력을 0으로 되돌리는 것에 맞춰 Throttle/Yaw 슬라이더를 0으로 되돌리고 그 값을 다시 전송함. `MetricsSnapshot`은 클라이언트가 실제로 뭘 받았는지를 기반으로 계산되는 값이라 서버가 스스로 알 방법이 없으므로, 클라이언트가 통계를 리셋하기 직전의 마지막 값을 `StopPayload`에 실어 함께 보낸다 — 서버는 `TcpControlServer::ProcessOneMessage`에서 이 값을, 자신이 그 세션에 보낸 총 패킷 수(`ClientSession::GetSentPacketCount()`, `session.Stop()`으로 리셋되기 전에 읽음)와 함께 콘솔에 출력한다.
 4. **조종**: 클라이언트가 `thrust <v>`/`yaw <v>`를 입력하면 자신의 `EntityId`(첫 Spawn으로 알게 된 값) + 보낼 때마다 증가하는 `SequenceId`를 함께 실어 UDP로 `EntityControlInput`을 서버에 보냄. 서버는 `SessionManager::GetSession(EntityId)`로 바로 세션을 조회하고(O(1), 전체 세션을 순회하지 않음), 발신 IP:포트가 그 세션이 등록해둔 UDP 엔드포인트와 일치하는지만 확인(다른 세션 사칭 방지). `ClientSession::ApplyControlInput`은 `SequenceId`가 마지막으로 적용한 값보다 새로울 때만 반영해서, UDP 역전으로 오래된 입력이 늦게 도착해 최신 입력을 덮어쓰는 걸 막는다.
-5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 엔티티들의 상태를 한 번만 모아둠 → (c) Playing 상태인 각 수신자에게, 모아둔 엔티티 상태 전부(자기 자신 포함)를 담은 `EntityState` 배치 패킷 1개를 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀.
+5. **물리 + 브로드캐스트**: 서버의 `UdpStreamingService`가 60Hz 틱마다: (a) Playing 상태인 모든 엔티티의 `StepPhysics(dt)` 호출 → (b) Playing 상태인 엔티티들의 상태를 한 번만 모아둠 → (c) `EntityState` 배치 패킷(`Timestamp` + 모아둔 엔티티 상태 전부)을 **틱당 한 번만 직렬화**해두고, Playing 상태인 각 수신자에게는 그 바이트를 그대로 재사용하면서 수신자별 `SequenceId`(8바이트)만 `Common::PatchEntityStateSequenceId`로 자리에서 덮어써서 전송. 수신자가 30Hz를 선택했으면 홀수 틱은 건너뜀. (수신자마다 매번 전체를 다시 직렬화하면 틱당 비용이 O(수신자 수 × 엔티티 수)로 커져서 — 클라이언트 1명이 곧 엔티티 1개라 둘 다 같은 수로 늘어남 — 클라이언트가 많아질수록 16.67ms 틱 예산을 넘기고 지연 패킷 비율이 급격히 뛰는 문제가 있었음. 지금 방식은 O(수신자 수 + 엔티티 수)로 끝남.)
 6. **연결 종료**: 클라이언트가 `quit`하거나 연결이 끊기면, 서버가 그 세션의 `EntityDespawn`을 남은 모든 세션에 브로드캐스트하고 세션을 제거.
 
 ## 물리 모델 (`ClientSession::StepPhysics`)
@@ -186,6 +186,7 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 - **`missingSequenceIds_`(유실 판정 집합)** 는 `MissingSequenceWindow`(1000개, 60Hz 기준 약 16초)보다 오래된 항목을 `confirmedLostCount_`로 흡수해서 무한정 커지지 않게 함.
 - **EntityState 배치에 개수 상한이 없음** — 수신자당 패킷 1개로 묶긴 하지만, 엔티티 수가 아주 많아지면(대략 60개 이상) 패킷이 UDP 단편화(fragmentation) 없이 안전한 크기(~1400바이트)를 넘어설 수 있음. 소규모 인원 기준으론 문제없고, 나중에 필요하면 "한 패킷에 최대 N개까지만 담고 넘치면 나눠 보낸다" 정도만 추가하면 됨.
 - **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 `EntityId`로 세션을 조회한 뒤 발신 IP:포트가 그 세션의 등록된 UDP 엔드포인트와 일치하는지 확인하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
+- **`TimerCompensator`가 Windows 기본 타이머 해상도(~15.6ms)를 그대로 씀** — `std::this_thread::sleep_until()`이 별도 요청 없이 이 해상도를 따르는데, 60Hz 틱 주기(16.67ms)와 거의 같은 수준이라 스케줄러가 한 틱만 놓쳐도 지연 판정 기준(기대 간격의 1.5배)을 넘기기 쉬움. 브로드캐스트 직렬화를 O(수신자 수 + 엔티티 수)로 최적화한 뒤에도 지연 패킷이 완전히 0이 되지 않고 몇 % 남는 주된 원인으로 보임(클라이언트 여러 개로 테스트 시 약 7%). 더 줄이려면 서버 프로세스에서 `timeBeginPeriod(1)`(winmm.h)로 타이머 해상도를 올려보는 게 다음 시도할 만한 실험 — 다만 시스템 전역 타이머 정밀도/전력 소비에 영향을 주는 트레이드오프가 있어 실측 후 판단 필요, 아직 미적용.
 
 ## 아직 부족한 점
 
