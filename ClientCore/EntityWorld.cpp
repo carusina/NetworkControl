@@ -65,4 +65,13 @@ namespace Client {
 		return result;
 	}
 
+	void EntityWorld::Clear()
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		entities_.clear();
+		hasMyEntityId_ = false;
+		myEntityId_ = 0;
+	}
+
 } // namespace Client

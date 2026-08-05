@@ -36,15 +36,15 @@ Gui/                  ClientCore.Managed를 쓰는 C# WPF GUI (MVVM)
 | Server | `TcpControlServer.h` / `.cpp` | TCP 연결 수락, 명령 처리, Spawn/Despawn 브로드캐스트 |
 | Server | `UdpStreamingService.h` / `.cpp` | 60Hz 틱: 물리 계산 + EntityState 브로드캐스트 |
 | Server | `UdpControlInputReceiver.h` / `.cpp` | 클라이언트의 조종 입력(UDP) 수신 |
-| ClientCore | `GameClient.h` / `.cpp` | 콘솔/GUI 공용 파사드 — TCP 접속+핸드셰이크, 명령 전송, 엔티티/통계 조회를 캡슐화 (콘솔 I/O 없음) |
+| ClientCore | `GameClient.h` / `.cpp` | 콘솔/GUI 공용 파사드 — TCP 접속+핸드셰이크, 명령 전송, 엔티티/통계 조회를 캡슐화 (콘솔 I/O 없음). 접속 성공 시 백그라운드 감시 스레드를 시작해 예기치 않은 연결 종료를 자동 재접속으로 복구(아래 "재접속" 섹션 참고) |
 | ClientCore | `UdpReceiver.h` / `.cpp` | EntityState 수신 + 조종 입력 송신 |
 | ClientCore | `MetricsCollector.h` / `.cpp` | 수신 품질 통계 (유실/역전/간격/지연) |
-| ClientCore | `EntityWorld.h` / `.cpp` | 서버가 알려준 엔티티들의 최신 상태 맵 |
-| ClientCore | `TcpMessageReceiver.h` / `.cpp` | TCP로 오는 Spawn/Despawn을 받는 백그라운드 스레드 |
-| ClientCore.Managed | `ManagedGameClient.h` / `.cpp` | `GameClient`를 감싼 `ref class` — `String^`↔`std::string` 등 타입 변환, `IDisposable`(`~T`/`!T`) 패턴 |
-| ClientCore.Managed | `ManagedTypes.h` | `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 구조체를 그대로 옮긴 C# 바인딩용 POCO |
+| ClientCore | `EntityWorld.h` / `.cpp` | 서버가 알려준 엔티티들의 최신 상태 맵. `Clear()`로 재접속 시 이전 세션의 흔적(엔티티 목록·내 EntityId)을 지움 |
+| ClientCore | `TcpMessageReceiver.h` / `.cpp` | TCP로 오는 Spawn/Despawn을 받는 백그라운드 스레드. 수신 루프가 `Stop()` 호출 없이 끝났으면(=서버가 끊음) `HasFailedUnexpectedly()`로 알림 |
+| ClientCore.Managed | `ManagedGameClient.h` / `.cpp` | `GameClient`를 감싼 `ref class` — `String^`↔`std::string` 등 타입 변환, `IDisposable`(`~T`/`!T`) 패턴, `GetConnectionState()`로 연결 상태(재접속 포함) 폴링 |
+| ClientCore.Managed | `ManagedTypes.h` | `ManagedConnectionState`, `ManagedEntityInfo`/`ManagedMetricsSnapshot` — 네이티브 값을 그대로 옮긴 C# 바인딩용 enum/POCO |
 | Client | `Main.cpp` | 진입점 + 대화형 REPL (`GameClient` 하나 생성 + 명령 파싱/화면 출력만 담당) |
-| Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()` 폴링(30Hz), 매 폴링마다 카메라 중심(내 위치) 갱신 |
+| Gui | `ViewModels/MainViewModel.cs` | `ManagedGameClient` 소유, 연결/재생 제어/조종 커맨드, `DispatcherTimer`로 `GetEntities()`/`GetMetrics()`/`GetConnectionState()` 폴링(30Hz), 매 폴링마다 카메라 중심(내 위치) 갱신과 재접속 상태 반영 |
 | Gui | `ViewModels/EntityViewModel.cs` | 엔티티 1개의 표시 상태 - 카메라(내 위치) 기준 상대 좌표를 메인 레이더 픽셀로, 월드 원점 기준 절대 좌표를 미니맵 픽셀로 매핑(둘 다 `WorldExtent` 밖은 clamp) |
 | Gui | `ViewModels/ViewModelBase.cs` | `INotifyPropertyChanged` 공통 구현 (`SetProperty`/`RaisePropertyChanged` 헬퍼) |
 | Gui | `Views/MainWindow.xaml` | 연결 입력, Play/Pause/Stop/Reset·Hz 버튼, Throttle/Yaw 슬라이더, 레이더/HUD 스타일 Canvas, `MetricsSnapshot` 전체 필드를 보여주는 수신 통계 패널 |
@@ -181,6 +181,18 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 - **엔티티 상태**: `ClientSession`의 Position/Heading/Velocity/Throttle/Yaw는 전용 `entityMutex_`로 보호 (물리 틱 스레드, 조종 입력 수신 스레드, TCP 스레드가 동시에 접근).
 - **블로킹 해제 패턴**: 소켓을 다른 스레드에서 `Close()`하면 블로킹 중인 `recv`/`ReceiveAll`이 즉시 에러로 풀려나온다 — `Stop()` 계열 함수들이 전부 이 패턴을 씀.
 
+## 클라이언트 재접속(자동 재연결)
+
+`GameClient`는 `Connect()`가 처음 성공하면 그 수명 동안(= `Disconnect()`가 호출되기 전까지) 하나만 유지되는 백그라운드 감시 스레드(`WatchdogWorker`)를 시작한다.
+
+- **감지**: `TcpMessageReceiver`의 수신 루프가 `Stop()` 호출 없이 끝나면(=서버가 연결을 끊었다는 뜻) `HasFailedUnexpectedly()`가 `true`가 된다. 워치독은 300ms마다 이 값을 확인한다.
+- **정리 + 전환**: 예기치 않은 종료를 감지하면 소켓/스레드를 정리하고 `ConnectionState`를 `Reconnecting`으로 바꾼다.
+- **재시도**: `Reconnecting` 상태에서는 2초 간격으로 마지막 접속 설정(`lastConfig_`)으로 `Connect()`를 다시 시도하고, 성공하면 `Connected`로 돌아간다.
+- **새 세션 취급**: 서버는 재접속을 완전히 새 TCP 연결로 보고 새 `SessionId`(=새 `EntityId`)를 발급하므로, 끊기기 전 상태로 "이어서 복귀"하는 게 아니다. 접속마다 `EntityWorld::Clear()`(엔티티 목록·내 EntityId 초기화)와 `MetricsCollector::Reset()`(`UdpReceiver::Start()` 안에서 호출)을 실행해서 이전 세션의 흔적이 새 세션에 안 섞이게 한다.
+- **최초 접속 실패는 재시도 안 함** — 워치독은 `Connect()`가 한 번이라도 성공한 뒤에만 시작되므로, 호스트/포트를 잘못 입력해 첫 접속부터 실패하면 그 자리에서 바로 실패로 보고한다(무한 재시도로 사용자를 헷갈리게 하지 않음).
+- **GUI**: `MainViewModel.Poll()`이 매 틱 `GetConnectionState()`를 확인해서 상태 텍스트("연결 끊김 - 재연결 시도 중...")를 갱신하고, `Reconnecting` 동안 화면의 엔티티를 지우며, `Connected`로 막 전환된 순간에만 Play 상태/Hz 표시를 서버 기본값(Stopped/30Hz)으로 되돌린다.
+- **콘솔**: 명령 전송 실패가 더 이상 프로그램 종료로 이어지지 않는다 — 연결 상태가 `Reconnecting`이면 "재접속 시도 중" 안내만 하고 REPL은 계속 살아있다. 프롬프트로 돌아올 때마다 연결 상태 변화를 감지해 한 줄 안내를 출력한다.
+
 ## 알려진 한계 / 설계상 트레이드오프
 
 - **지연(latency) 측정은 같은 컴퓨터에서 실행할 때만 유효** — `Timestamp`는 `steady_clock` 기반이라 서로 다른 물리 PC끼리는 시계 기준이 달라 값이 의미 없어짐 (진짜 크로스 머신 지연을 재려면 NTP 비슷한 시계 동기화가 별도로 필요, 아직 미구현).
@@ -188,13 +200,13 @@ Visual Studio에서 F5로 실행하면 작업 디렉터리가 프로젝트 폴�
 - **EntityState 배치에 개수 상한이 없음** — 수신자당 패킷 1개로 묶긴 하지만, 엔티티 수가 아주 많아지면(대략 60개 이상) 패킷이 UDP 단편화(fragmentation) 없이 안전한 크기(~1400바이트)를 넘어설 수 있음. 소규모 인원 기준으론 문제없고, 나중에 필요하면 "한 패킷에 최대 N개까지만 담고 넘치면 나눠 보낸다" 정도만 추가하면 됨.
 - **UDP 조종 입력은 클라이언트가 등록한 그 소켓에서만 보냄** — 서버가 `EntityId`로 세션을 조회한 뒤 발신 IP:포트가 그 세션의 등록된 UDP 엔드포인트와 일치하는지 확인하므로, 클라이언트의 UDP 소켓이 바뀌면(재시작 등) 다시 `RegisterUdpPort`부터 해야 함.
 - **`TimerCompensator`가 Windows 기본 타이머 해상도(~15.6ms)를 그대로 씀** — `std::this_thread::sleep_until()`이 별도 요청 없이 이 해상도를 따르는데, 60Hz 틱 주기(16.67ms)와 거의 같은 수준이라 스케줄러가 한 틱만 놓쳐도 지연 판정 기준(기대 간격의 1.5배)을 넘기기 쉬움. 브로드캐스트 직렬화를 O(수신자 수 + 엔티티 수)로 최적화한 뒤에도 지연 패킷이 완전히 0이 되지 않고 몇 % 남는 주된 원인으로 보임(클라이언트 여러 개로 테스트 시 약 7%). 더 줄이려면 서버 프로세스에서 `timeBeginPeriod(1)`(winmm.h)로 타이머 해상도를 올려보는 게 다음 시도할 만한 실험 — 다만 시스템 전역 타이머 정밀도/전력 소비에 영향을 주는 트레이드오프가 있어 실측 후 판단 필요, 아직 미적용.
+- **재접속 워치독은 `Play`/`Pause`/`SendControlInput` 등 명령 송신 경로와 락을 공유하지 않음** — `GameClient::connectionMutex_`는 `Connect()`/`Disconnect()`/워치독의 소켓 정리·재접속에만 걸려 있다. 명령 송신까지 다 잠그면, 워치독이 도달 불가능한 서버로 `connect()`를 시도하는 동안(느리면 수 초 걸릴 수 있음) UI 쪽 명령까지 그만큼 멈춰버릴 위험이 있어서 일부러 안 걸었음. 대신 소켓을 닫는 순간과 명령을 보내는 순간이 정확히 겹치는 아주 좁은 창에서 소켓 핸들에 대한 벤나인한(크래시로 안 이어지는, 기껏해야 그 순간의 명령 하나가 실패하는) 데이터 레이스가 이론적으로 남아있음 — 같은 컴퓨터에서 테스트하는 이 프로젝트의 주 사용처에서는 감수할 만한 트레이드오프로 판단.
 
 ## 아직 부족한 점
 
 - **자동화된 테스트가 없음** — `StepPhysics`, `BinaryWriter`/`BinaryReader` 직렬화 왕복, `TimerCompensator`의 틱 보정, `MetricsCollector`의 유실/지연 판정처럼 숫자가 미묘하게 틀리면 조용히 깨지는 로직들이 전부 수동 검증에 의존함. CI도 없어서 리팩터링할 때 회귀를 잡아줄 안전망이 전혀 없다는 게 가장 큰 공백.
 - **접속·조종 입력 모두 인증이 없음** — TCP는 누구나 연결해서 `RegisterUdpPort`만 보내면 세션이 생성되고, `EntityControlInput`(UDP) 검증도 발신 IP:포트 일치 확인뿐이라 소스 주소 스푸핑에 취약함. 로컬/데모 용도로는 괜찮지만 외부에 노출하려면 세션별 토큰 같은 인증 수단과 입력 레이트 리밋이 필요함.
 - **클라이언트가 수신 상태를 보간(interpolate)하지 않음** — `GetEntities()`가 반환하는 최신 스냅샷을 그대로 그리기 때문에, 수신 주기(30Hz 등)만큼 화면이 끊겨 보일 수 있음. 마지막 두 상태 사이를 프레임마다 보간하면 더 부드럽게 보임.
-- **재접속/장애 복구가 없음** — 서버가 죽거나 연결이 끊기면 클라이언트(콘솔/GUI 모두)가 그대로 멈추고, 재시도 로직이 없음. 세션 상태는 메모리에만 있어서 서버가 재시작되면 접속 중이던 클라이언트 정보도 전부 사라짐.
 - **서버가 `quit` 명령 외의 종료 경로를 처리하지 않음** — 콘솔에 `quit`을 입력해야만 `SessionManager::CloseAll()` 등 정리 경로를 타고, `Ctrl+C`(SIGINT)나 콘솔 창을 강제로 닫는 경우는 별도로 처리하지 않음.
 - **와이어 프로토콜에 버전 관리가 없음** — `Stop` 메시지에 `StopPayload`를 추가했던 것처럼 프로토콜이 바뀌면 Server/Client를 항상 같이 재빌드해야 하고, 버전이 다른 쪽끼리 섞이면 별다른 에러 없이 그냥 스트림 프레이밍이 어긋나며 깨짐. 버전 필드나 협상 절차가 없음.
 

@@ -22,6 +22,10 @@ namespace Client {
 			void Start();
 			void Stop();
 
+			// 정상적으로 Stop()이 호출되지 않았는데 수신 루프가 끝났으면 true(=서버가 끊었다는 뜻) -
+			// GameClient의 재접속 감시 스레드가 이 값으로 예기치 않은 연결 종료를 감지함
+			bool HasFailedUnexpectedly() const;
+
 		private:
 			void ReceiveWorker();
 
@@ -30,6 +34,7 @@ namespace Client {
 			EntityWorld& entityWorld_;
 			std::thread workerThread_;
 			std::atomic<bool> isRunning_{ false };
+			std::atomic<bool> hasFailedUnexpectedly_{ false };
 	};
 
 } // namespace Client

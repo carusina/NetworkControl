@@ -21,6 +21,10 @@ namespace ClientCoreManaged {
 			bool Connect(System::String^ host, int tcpPort, int udpPort, int serverUdpPort);
 			void Disconnect();
 
+			// 접속이 끊긴 뒤에도 네이티브 쪽에서 백그라운드로 재접속을 시도하므로, 이 값을
+			// 폴링해서 Connected/Disconnected 외에 Reconnecting 상태도 화면에 보여줄 수 있음
+			ManagedConnectionState GetConnectionState();
+
 			bool Play();
 			bool Pause();
 			bool Stop();

@@ -36,6 +36,10 @@ namespace Client {
 		{
 			uint8_t headerByte = 0;
 			if (!controlSocket_.ReceiveAll(&headerByte, sizeof(headerByte))) {
+				// isRunning_이 아직 true면 우리가 Stop()을 부른 게 아니라 서버 쪽에서 끊긴 것
+				if (isRunning_) {
+					hasFailedUnexpectedly_ = true;
+				}
 				break;
 			}
 
@@ -49,6 +53,9 @@ namespace Client {
 			{
 				uint8_t payloadBytes[Common::EntitySpawnPayloadSize]{};
 				if (!controlSocket_.ReceiveAll(payloadBytes, sizeof(payloadBytes))) {
+					if (isRunning_) {
+						hasFailedUnexpectedly_ = true;
+					}
 					break;
 				}
 
@@ -62,6 +69,9 @@ namespace Client {
 			{
 				uint8_t payloadBytes[Common::EntityDespawnPayloadSize]{};
 				if (!controlSocket_.ReceiveAll(payloadBytes, sizeof(payloadBytes))) {
+					if (isRunning_) {
+						hasFailedUnexpectedly_ = true;
+					}
 					break;
 				}
 
@@ -74,9 +84,16 @@ namespace Client {
 			else
 			{
 				// 이 채널에서 예상하지 못한 타입 - 스트림 정렬이 깨졌다고 보고 종료
+				if (isRunning_) {
+					hasFailedUnexpectedly_ = true;
+				}
 				break;
 			}
 		}
+	}
+
+	bool TcpMessageReceiver::HasFailedUnexpectedly() const {
+		return hasFailedUnexpectedly_;
 	}
 
 } // namespace Client

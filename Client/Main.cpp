@@ -109,6 +109,17 @@ namespace {
 		}
 	}
 
+	// 명령 전송 실패는 이제 프로그램 종료가 아니라 "재접속 중이니 잠시 후 다시" 안내로 처리
+	void ReportCommandFailure(const Client::GameClient& gameClient)
+	{
+		if (gameClient.GetConnectionState() == Client::ConnectionState::Reconnecting) {
+			std::cout << "서버와의 연결이 끊겨 재접속을 시도하는 중입니다. 잠시 후 다시 시도해주세요." << std::endl;
+		}
+		else {
+			std::cout << "명령 전송에 실패했습니다." << std::endl;
+		}
+	}
+
 	bool RunClientControlLoop(const Common::ClientConfig& config)
 	{
 		Client::GameClient gameClient;
@@ -123,10 +134,26 @@ namespace {
 		float lastThrottle = 0.0f;
 		float lastYaw = 0.0f;
 
+		// 접속 후에는 예기치 않게 끊겨도 백그라운드에서 자동 재접속을 시도하므로, 명령 프롬프트로
+		// 돌아올 때마다 상태 변화를 감지해서 한 줄 안내만 하고 REPL 자체는 계속 살려둠
+		Client::ConnectionState lastKnownState = Client::ConnectionState::Connected;
+
 		std::string input;
 
 		while (true)
 		{
+			const Client::ConnectionState currentState = gameClient.GetConnectionState();
+			if (currentState != lastKnownState)
+			{
+				if (currentState == Client::ConnectionState::Reconnecting) {
+					std::cout << "서버와의 연결이 끊겼습니다. 재접속을 시도합니다..." << std::endl;
+				}
+				else if (currentState == Client::ConnectionState::Connected) {
+					std::cout << "서버에 다시 연결되었습니다." << std::endl;
+				}
+				lastKnownState = currentState;
+			}
+
 			std::cout << "> ";
 			std::getline(std::cin, input);
 
@@ -136,35 +163,36 @@ namespace {
 
 			if (input == "play") {
 				if (!gameClient.Play()) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
 			}
 			else if (input == "pause") {
 				if (!gameClient.Pause()) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
 			}
 			else if (input == "stop") {
 				if (!gameClient.Stop()) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
 			}
 			else if (input == "reset") {
 				if (!gameClient.Reset()) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
-
-				lastThrottle = 0.0f;
-				lastYaw = 0.0f;
+				else {
+					lastThrottle = 0.0f;
+					lastYaw = 0.0f;
+				}
 			}
 			else if (input == "30") {
 				if (!gameClient.SetRate(Common::DataRate::Hz30)) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
 			}
 			else if (input == "60") {
 				if (!gameClient.SetRate(Common::DataRate::Hz60)) {
-					return false;
+					ReportCommandFailure(gameClient);
 				}
 			}
 			else if (input.rfind("thrust ", 0) == 0)

@@ -35,6 +35,10 @@ namespace Gui.ViewModels
         private PlayState playState_ = PlayState.Stopped;
         private bool isRate60_;
 
+        // Poll()마다 GetConnectionState()와 비교해서 Connected로 "막 전환"된 순간을 감지하는 데 씀
+        // (최초 접속이든 자동 재접속이든, 새 세션은 항상 서버 기본값으로 시작하므로 그때만 리셋)
+        private ManagedConnectionState previousConnectionState_ = ManagedConnectionState.Disconnected;
+
         public MainViewModel()
         {
             timer_ = new DispatcherTimer { Interval = PollInterval };
@@ -176,6 +180,56 @@ namespace Gui.ViewModels
             RaisePropertyChanged(nameof(DataRateText));
         }
 
+        private void ApplyConnectionState(ManagedConnectionState state)
+        {
+            bool justConnected = state == ManagedConnectionState.Connected
+                && previousConnectionState_ != ManagedConnectionState.Connected;
+
+            switch (state)
+            {
+                case ManagedConnectionState.Connected:
+                    IsConnected = true;
+                    StatusMessage = "연결됨";
+                    break;
+
+                case ManagedConnectionState.Reconnecting:
+                    IsConnected = false;
+                    StatusMessage = "연결 끊김 - 재연결 시도 중...";
+                    ClearStaleEntities();
+                    break;
+
+                case ManagedConnectionState.Disconnected:
+                    IsConnected = false;
+                    StatusMessage = "연결되지 않음";
+                    break;
+            }
+
+            if (justConnected)
+            {
+                // 최초 접속이든 자동 재접속이든, 새 세션은 항상 서버 기본값(Stopped, 30Hz)으로
+                // 시작하므로 로컬 표시도 그때마다 맞춰줌 - 이미 재생 중인데 매 틱 덮어쓰면 안 되니
+                // Connected로 "막 전환"된 순간에만 함
+                SetPlayState(PlayState.Stopped);
+                SetDataRate60(false);
+            }
+
+            previousConnectionState_ = state;
+        }
+
+        // 재접속 전 세션의 엔티티는 더 이상 유효하지 않으므로(새 세션 = 새 EntityId) 화면에서 지움
+        private void ClearStaleEntities()
+        {
+            if (Entities.Count == 0)
+            {
+                return;
+            }
+
+            Entities.Clear();
+            entityLookup_.Clear();
+            MyEntityIdText = "-";
+            MyPositionText = "-";
+        }
+
         private void Stop()
         {
             if (!client_.Stop())
@@ -215,16 +269,21 @@ namespace Gui.ViewModels
                 return;
             }
 
-            IsConnected = true;
-            StatusMessage = "연결됨";
-            // 새 세션은 서버 기본값(Stopped, 30Hz)으로 시작하므로 로컬 표시도 맞춰줌
-            SetPlayState(PlayState.Stopped);
-            SetDataRate60(false);
+            // IsConnected/StatusMessage/PlayState 등은 곧 시작되는 타이머의 Poll()이
+            // GetConnectionState()를 보고 갱신함(최초 접속이든 이후 자동 재접속이든 동일 경로)
             timer_.Start();
         }
 
+        // Connected가 아니면 서버가 더 이상 새 데이터를 안 주므로 엔티티/통계 갱신은 건너뜀
         private void Poll()
         {
+            ApplyConnectionState(client_.GetConnectionState());
+
+            if (!IsConnected)
+            {
+                return;
+            }
+
             var seenIds = new HashSet<uint>();
             var myEntityId = client_.GetMyEntityId();
 

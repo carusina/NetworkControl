@@ -6,6 +6,15 @@
 
 namespace ClientCoreManaged {
 
+	// Client::ConnectionState(네이티브)를 그대로 옮김 - 값 순서를 네이티브와 맞춰서
+	// ManagedGameClient::GetConnectionState()에서 static_cast로 바로 변환할 수 있게 함
+	public enum class ManagedConnectionState
+	{
+		Disconnected,
+		Connected,
+		Reconnecting
+	};
+
 	// Client::EntityInfo(네이티브)를 C#에서 바인딩하기 좋은 모양으로 그대로 옮긴 POCO
 	public ref class ManagedEntityInfo
 	{

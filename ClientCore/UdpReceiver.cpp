@@ -15,6 +15,7 @@ namespace Client {
 	{
 		Stop();
 		isActive_ = false; // 새 세션은 서버 기본값(Stopped)과 맞춰 항상 비활성 상태로 시작
+		metricsCollector_.Reset(); // 재접속인 경우 이전 세션의 누적 통계가 새 세션에 안 섞이게 함
 
 		Common::Ipv4Endpoint endpoint;
 		if (!Common::Ipv4Endpoint::TryCreate("0.0.0.0", port, endpoint) ||

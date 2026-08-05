@@ -59,6 +59,10 @@ namespace ClientCoreManaged {
 		native_->Disconnect();
 	}
 
+	ManagedConnectionState ManagedGameClient::GetConnectionState() {
+		return static_cast<ManagedConnectionState>(native_->GetConnectionState());
+	}
+
 	bool ManagedGameClient::Play()  { return native_->Play();  }
 	bool ManagedGameClient::Pause() { return native_->Pause(); }
 	bool ManagedGameClient::Stop()  { return native_->Stop();  }

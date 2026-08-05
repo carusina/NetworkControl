@@ -2,7 +2,9 @@
 
 #include "../Common/BinarySerializer.h"
 
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 namespace Client {
 
@@ -14,17 +16,70 @@ namespace Client {
 			return value;
 		}
 
+		// 예기치 않게 끊긴 뒤 재접속을 시도하는 간격
+		constexpr auto ReconnectInterval = std::chrono::milliseconds(2000);
+
+		// 워치독이 연결 상태를 다시 확인하는 주기 - Disconnect()가 이 스레드를 join하기까지
+		// 기다리는 최대 시간과도 직결되므로 너무 길게 잡지 않음
+		constexpr auto WatchdogPollInterval = std::chrono::milliseconds(300);
+
 	} // namespace
 
 	GameClient::GameClient()
 		: udpReceiver_(entityWorld_) { }
 
+	GameClient::~GameClient() {
+		Disconnect();
+	}
+
 	bool GameClient::Connect(const Common::ClientConfig& config)
 	{
-		if (isConnected_) {
-			Disconnect();
+		std::lock_guard<std::mutex> lock(connectionMutex_);
+
+		if (connectionState_ != ConnectionState::Disconnected) {
+			TeardownConnectionLocked();
 		}
 
+		const bool connected = ConnectLocked(config);
+
+		if (connected)
+		{
+			lastConfig_ = config;
+
+			// 이미 감시 스레드가 돌고 있으면(재접속 성공 등) 새로 안 만듦 - Disconnect()가
+			// 호출될 때까지 스레드 하나가 이 GameClient의 수명 내내 재사용됨
+			if (!isWatchdogRunning_.exchange(true)) {
+				watchdogThread_ = std::thread(&GameClient::WatchdogWorker, this);
+			}
+		}
+
+		return connected;
+	}
+
+	void GameClient::Disconnect()
+	{
+		// 워치독을 먼저 멈춤 - connectionMutex_를 잡기 전에 join해야, 워치독이 그 락을
+		// 필요로 하는 타이밍이어도 서로 안 막힘
+		isWatchdogRunning_ = false;
+		if (watchdogThread_.joinable()) {
+			watchdogThread_.join();
+		}
+
+		std::lock_guard<std::mutex> lock(connectionMutex_);
+		TeardownConnectionLocked();
+		connectionState_ = ConnectionState::Disconnected;
+	}
+
+	bool GameClient::IsConnected() const {
+		return connectionState_ == ConnectionState::Connected;
+	}
+
+	ConnectionState GameClient::GetConnectionState() const {
+		return connectionState_;
+	}
+
+	bool GameClient::ConnectLocked(const Common::ClientConfig& config)
+	{
 		if (!udpReceiver_.Start(config.UdpPort)) {
 			return false;
 		}
@@ -54,14 +109,18 @@ namespace Client {
 			return false;
 		}
 
+		// 재접속인 경우 이전 세션(예전 EntityId 포함)의 흔적을 지움 - 서버는 재접속을 완전히
+		// 새 세션으로 취급하므로(EntityId가 SessionId 재사용), 끊기기 전 상태로 이어지지 않음
+		entityWorld_.Clear();
+
 		tcpMessageReceiver_ = std::make_unique<TcpMessageReceiver>(tcpSocket_, entityWorld_);
 		tcpMessageReceiver_->Start();
 
-		isConnected_ = true;
+		connectionState_ = ConnectionState::Connected;
 		return true;
 	}
 
-	void GameClient::Disconnect()
+	void GameClient::TeardownConnectionLocked()
 	{
 		if (tcpMessageReceiver_) {
 			tcpMessageReceiver_->Stop();
@@ -70,12 +129,48 @@ namespace Client {
 
 		udpReceiver_.Stop();
 		tcpSocket_.Close();
-		isConnected_ = false;
+	}
+
+	void GameClient::WatchdogWorker()
+	{
+		auto nextRetryTime = std::chrono::steady_clock::time_point{};
+
+		while (isWatchdogRunning_)
+		{
+			std::this_thread::sleep_for(WatchdogPollInterval);
+
+			if (!isWatchdogRunning_) {
+				break;
+			}
+
+			std::lock_guard<std::mutex> lock(connectionMutex_);
+
+			if (connectionState_ == ConnectionState::Connected)
+			{
+				// TcpMessageReceiver의 수신 루프가 우리가 Stop()을 부른 게 아닌데 끝났으면
+				// 서버가 연결을 끊었다는 뜻 - 정리하고 재접속 시도 상태로 전환
+				if (tcpMessageReceiver_ && tcpMessageReceiver_->HasFailedUnexpectedly())
+				{
+					TeardownConnectionLocked();
+					connectionState_ = ConnectionState::Reconnecting;
+					nextRetryTime = std::chrono::steady_clock::now() + ReconnectInterval;
+				}
+			}
+			else if (connectionState_ == ConnectionState::Reconnecting)
+			{
+				if (std::chrono::steady_clock::now() >= nextRetryTime)
+				{
+					if (!ConnectLocked(lastConfig_)) {
+						nextRetryTime = std::chrono::steady_clock::now() + ReconnectInterval;
+					}
+				}
+			}
+		}
 	}
 
 	bool GameClient::Play()
 	{
-		if (!isConnected_ || !SendHeaderOnly(Common::MessageType::Play)) {
+		if (!IsConnected() || !SendHeaderOnly(Common::MessageType::Play)) {
 			return false;
 		}
 
@@ -85,7 +180,7 @@ namespace Client {
 
 	bool GameClient::Pause()
 	{
-		if (!isConnected_ || !SendHeaderOnly(Common::MessageType::Pause)) {
+		if (!IsConnected() || !SendHeaderOnly(Common::MessageType::Pause)) {
 			return false;
 		}
 
@@ -95,7 +190,7 @@ namespace Client {
 
 	bool GameClient::Stop()
 	{
-		if (!isConnected_) {
+		if (!IsConnected()) {
 			return false;
 		}
 
@@ -115,7 +210,7 @@ namespace Client {
 
 	bool GameClient::Reset()
 	{
-		if (!isConnected_ || !SendHeaderOnly(Common::MessageType::Reset)) {
+		if (!IsConnected() || !SendHeaderOnly(Common::MessageType::Reset)) {
 			return false;
 		}
 
@@ -125,7 +220,7 @@ namespace Client {
 
 	bool GameClient::SetRate(Common::DataRate dataRate)
 	{
-		if (!isConnected_ || !SendSetRate(static_cast<uint32_t>(dataRate))) {
+		if (!IsConnected() || !SendSetRate(static_cast<uint32_t>(dataRate))) {
 			return false;
 		}
 
@@ -136,7 +231,7 @@ namespace Client {
 	bool GameClient::SendControlInput(float throttle, float yaw)
 	{
 		uint32_t myEntityId = 0;
-		if (!isConnected_ || !entityWorld_.TryGetMyEntityId(myEntityId)) {
+		if (!IsConnected() || !entityWorld_.TryGetMyEntityId(myEntityId)) {
 			return false;
 		}
 
