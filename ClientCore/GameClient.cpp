@@ -95,8 +95,16 @@ namespace Client {
 
 	bool GameClient::Stop()
 	{
+		if (!isConnected_) {
+			return false;
+		}
+
+		// 서버가 아직 이 Stop을 처리하기 전에 이미 날아오고 있던 EntityState가 뒤늦게 도착해도
+		// 무시하도록, 통계를 건드리기 전에 먼저 수신 비활성화부터 함
+		udpReceiver_.OnStop();
+
 		// 리셋되기 전의 마지막 통계를 서버에 실어 보냄 (서버는 이 값을 스스로 계산할 수 없음)
-		if (!isConnected_ || !SendStop(udpReceiver_.GetMetrics())) {
+		if (!SendStop(udpReceiver_.GetMetrics())) {
 			return false;
 		}
 

@@ -14,6 +14,7 @@ namespace Client {
 	bool UdpReceiver::Start(uint16_t port)
 	{
 		Stop();
+		isActive_ = false; // 새 세션은 서버 기본값(Stopped)과 맞춰 항상 비활성 상태로 시작
 
 		Common::Ipv4Endpoint endpoint;
 		if (!Common::Ipv4Endpoint::TryCreate("0.0.0.0", port, endpoint) ||
@@ -74,6 +75,11 @@ namespace Client {
 				continue;
 			}
 
+			// 로컬에서 Pause/Stop을 반영한 뒤 뒤늦게 도착한 스트래글러 패킷은 여기서 조용히 버림
+			if (!isActive_) {
+				continue;
+			}
+
 			metricsCollector_.OnPacketReceived(batch.SequenceId, batch.Timestamp);
 
 			for (const auto& entry : batch.Entities) {
@@ -87,11 +93,17 @@ namespace Client {
 	}
 
 	void UdpReceiver::OnPlay() {
+		isActive_ = true;
 		metricsCollector_.OnPlay();
 	}
 
 	void UdpReceiver::OnPause() {
+		isActive_ = false;
 		metricsCollector_.OnPause();
+	}
+
+	void UdpReceiver::OnStop() {
+		isActive_ = false;
 	}
 
 	bool UdpReceiver::SendControlInput(const Common::Ipv4Endpoint& serverEndpoint, uint32_t entityId, float throttle, float yaw)
