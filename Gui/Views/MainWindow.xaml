@@ -217,6 +217,9 @@
                         <Line X1="72" Y1="112.5" X2="78" Y2="112.5" Stroke="#5500FFAA" StrokeThickness="1"/>
 
                         <TextBlock Text="±400" FontSize="9" Foreground="Gray" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,3,0"/>
+                        <!-- 미니맵은 메인 레이더와 달리 회전하지 않는 고정 절대좌표 뷰라는 것을 텍스트로 안내
+                             (예전엔 축을 메인 레이더에 우연히 맞춰뒀었는데, 그 대신 표준 축 + 이 안내로 바꿈) -->
+                        <TextBlock Text="고정(회전 없음)" FontSize="9" Foreground="Gray" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
 
                         <Canvas>
                             <ItemsControl ItemsSource="{Binding Entities}">

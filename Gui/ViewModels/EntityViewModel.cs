@@ -69,13 +69,14 @@ namespace Gui.ViewModels
             double effectiveHeadingAngle = heading_ + delta;
             SetProperty(ref headingDegrees_, -effectiveHeadingAngle * 180.0 / Math.PI, nameof(HeadingDegrees));
 
-            // 미니맵은 카메라 오프셋/회전을 전혀 안 받음 - 항상 월드 원점 기준 절대 좌표.
-            // 축은 일부러 (X,Y)를 그대로 안 쓰고 (-Y, -X)로 씀 - heading=0(정지 상태 기본 헤딩)이
-            // 월드 +X 방향인데, 그걸 "위"로 매핑해야 메인 레이더(heading-up)의 "위"와
-            // 시작 시점 기준이 맞음. 그대로 (X,-Y)를 썼으면 미니맵의 "위"가 월드 +Y가 되어,
-            // 처음 원점에 있을 때부터 두 화면의 "위"가 90도 어긋나 보였음.
-            SetProperty(ref minimapLeft_, ToMinimap(-positionY_) - MinimapMarkerRadius, nameof(MinimapLeft));
-            SetProperty(ref minimapTop_, ToMinimap(-positionX_) - MinimapMarkerRadius, nameof(MinimapTop));
+            // 미니맵은 카메라 오프셋/회전을 전혀 안 받음 - 항상 월드 원점 기준 절대 좌표를
+            // 표준 탑다운 지도 축으로 그림: world +X = 오른쪽(그대로), world +Y = 위쪽이라
+            // 화면 좌표(아래로 갈수록 커짐)에 맞추려고 Y만 반전. (예전엔 메인 레이더가 heading=0일
+            // 때 우연히 보여주는 (-Y,-X) 축을 그대로 베껴서, 시작 시점의 "위"만 메인 레이더와
+            // 맞춰뒀었는데 - 그건 미니맵이 회전 없는 절대 좌표 뷰라는 것과 원칙적으로 안 맞고,
+            // 세계의 어떤 고정된 방향과도 안 맞는 값이라 표준 축으로 되돌림)
+            SetProperty(ref minimapLeft_, ToMinimap(positionX_) - MinimapMarkerRadius, nameof(MinimapLeft));
+            SetProperty(ref minimapTop_, ToMinimap(-positionY_) - MinimapMarkerRadius, nameof(MinimapTop));
         }
 
         public float PositionX => positionX_;
